@@ -1,0 +1,29 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ---------- 本机敏感配置（含 MySQL 密码 / SECRET_KEY，不入库） ----------
+backend/config.py
+
+# ---------- 用户数据（视频 / 缩略图缓存） ----------
+backend/uploads/
+backend/thumbs/
+
+# ---------- Node / 前端 ----------
+node_modules/
+frontend/dist/
+*.timestamp-*.mjs
+
+# ---------- IDE / 系统 ----------
+.idea/
+.vscode/
+.DS_Store
+
+# ---------- 日志 ----------
+*.log
+
+# ---------- 本地 ffmpeg 二进制（用 brew 安装即可，不入库） ----------
+backend/bin/
