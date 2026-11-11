@@ -1,26 +1,40 @@
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, onUnmounted, watch } from 'vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   title: { type: String, default: '' },
   width: { type: [String, Number], default: '560px' },
+  // 遮罩层级：业务弹窗默认 1000；全局确认框传更高值保证盖在业务弹窗之上
+  overlayZ: { type: [String, Number], default: 1000 },
 })
 const emit = defineEmits(['update:modelValue'])
 
 const close = () => emit('update:modelValue', false)
 
+const overlayStyle = computed(() => ({
+  zIndex: props.overlayZ,
+}))
+
 const widthStyle = computed(() => ({
   width: typeof props.width === 'number' ? `${props.width}px` : props.width,
 }))
 
-// 弹窗打开时锁定背景滚动
+// 弹窗打开时锁定背景滚动；多层弹窗叠开时按计数释放（确认框关闭不影响底层弹窗）
+let openCount = 0
 watch(
   () => props.modelValue,
   (open) => {
-    document.body.style.overflow = open ? 'hidden' : ''
+    openCount += open ? 1 : -1
+    document.body.style.overflow = openCount > 0 ? 'hidden' : ''
   },
 )
+
+onUnmounted(() => {
+  if (!props.modelValue) return
+  openCount = Math.max(0, openCount - 1)
+  if (openCount === 0) document.body.style.overflow = ''
+})
 
 const onKeydown = (e) => {
   if (e.key === 'Escape' && props.modelValue) close()
@@ -31,7 +45,7 @@ window.addEventListener('keydown', onKeydown)
 <template>
   <Teleport to="body">
     <Transition name="nf-modal">
-      <div v-if="modelValue" class="nf-modal-overlay" @click.self="close">
+      <div v-if="modelValue" class="nf-modal-overlay" :style="overlayStyle" @click.self="close">
         <div class="nf-modal" :style="widthStyle" role="dialog">
           <header class="nf-modal-head">
             <h3 class="nf-modal-title">{{ title }}</h3>

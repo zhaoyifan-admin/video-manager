@@ -13,8 +13,10 @@ import { useAuth } from './composables/useAuth'
 import {
   listTags,
   listTypes,
+  listVideos,
   toggleFavorite,
   togglePublic,
+  auditVideo,
   deleteVideo,
   logout as apiLogout,
 } from './api'
@@ -141,9 +143,9 @@ const manageModal = ref(null)
 
 const openForm = (row = null) => formModal.value?.open(row)
 
-// 新增/编辑保存后：刷新列表 + 标签 + 类型（新类型/标签可能已创建）
+// 新增/编辑保存后：刷新列表 + 标签 + 类型（新类型/标签可能已创建）+ 待审角标
 const onFormSaved = async () => {
-  await Promise.all([fetchVideos(), loadTags(), loadTypes()])
+  await Promise.all([fetchVideos(), loadTags(), loadTypes(), loadPendingCount()])
 }
 
 // 管理弹窗变更后：刷新导航与筛选用的标签/类型
@@ -151,10 +153,46 @@ const onManageChanged = async () => {
   await Promise.all([loadTags(), loadTypes()])
 }
 
+// ================= 管理员审核 =================
+const pendingCount = ref(0) // 待审核数量（导航角标）
+
+const loadPendingCount = async () => {
+  if (!isSuperAdmin.value) return
+  try {
+    const data = await listVideos({ auditStatus: 0, page: 1, pageSize: 1 })
+    pendingCount.value = data.total
+  } catch {
+    // 角标加载失败不阻塞主流程
+  }
+}
+
+// 卡片快捷审核（通过 / 驳回）
+const handleAudit = async (row, status) => {
+  if (status === 2) {
+    const ok = await confirmAction({
+      title: '驳回确认',
+      message: `确认驳回视频「${row.title}」？驳回后该视频将自动转为私有，仅归属者本人可见。`,
+    })
+    if (!ok) return
+  }
+  try {
+    await auditVideo(row.id, status)
+    row.auditStatus = status
+    if (status === 2) row.isPublic = false
+    showToast(status === 1 ? `「${row.title}」已通过审核` : `「${row.title}」已驳回`)
+    loadPendingCount()
+  } catch (e) {
+    showToast.error(e.message)
+  }
+}
+
+// 审核中心页内完成审核后，回到列表页时组件重新挂载，会自动刷新列表与角标
+
 onMounted(() => {
   loadTags().catch((e) => showToast.error(e.message))
   loadTypes().catch((e) => showToast.error(e.message))
   fetchVideos()
+  loadPendingCount()
 })
 </script>
 
@@ -165,6 +203,8 @@ onMounted(() => {
     :active-type-id="query.typeId"
     :fav-active="!!query.favorite"
     :username="user?.username || ''"
+    :is-admin="isSuperAdmin"
+    :pending-count="pendingCount"
     @select-type="selectType"
     @toggle-fav="toggleFavFilter"
     @search="onNavSearch"
@@ -219,12 +259,14 @@ onMounted(() => {
         :key="row.id"
         :video="row"
         :manageable="canManage(row)"
+        :can-audit="isSuperAdmin"
         :show-owner="row.ownerId !== user?.id"
         @play="playVideo"
         @edit="openForm"
         @remove="removeVideo"
         @toggle-fav="toggleFavoriteState"
         @toggle-public="togglePublicState"
+        @audit="handleAudit"
       />
     </div>
 
@@ -245,11 +287,11 @@ onMounted(() => {
     <div class="footer-copy">© {{ new Date().getFullYear() }} Video Manager</div>
   </footer>
 
-  <!-- 弹窗组：新增/编辑 / 批量导入 / 标签类型管理 -->
+  <!-- 弹窗组：新增/编辑 / 批量导入 / 标签类型管理（审核中心已独立为 /audit 页面） -->
   <VideoFormModal ref="formModal" @saved="onFormSaved" />
   <BatchImportModal
     ref="batchModal"
-    @imported="() => Promise.all([fetchVideos(), loadTags(), loadTypes()])"
+    @imported="() => Promise.all([fetchVideos(), loadTags(), loadTypes(), loadPendingCount()])"
   />
   <ManageModal ref="manageModal" @changed="onManageChanged" />
 </template>

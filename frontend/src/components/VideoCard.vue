@@ -5,11 +5,13 @@ defineProps({
   video: { type: Object, required: true },
   // 编辑/删除/公开设置权限：本人视频或超级管理员
   manageable: { type: Boolean, default: false },
+  // 审核权限：仅超级管理员
+  canAudit: { type: Boolean, default: false },
   // 非本人视频（公开共享）时显示归属者
   showOwner: { type: Boolean, default: false },
 })
 
-defineEmits(['play', 'edit', 'remove', 'toggle-fav', 'toggle-public'])
+defineEmits(['play', 'edit', 'remove', 'toggle-fav', 'toggle-public', 'audit'])
 
 const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
 </script>
@@ -35,8 +37,13 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
     ></video>
     <div class="card-scrim"></div>
 
-    <span v-if="video.typeName" class="cover-type">{{ video.typeName }}</span>
-    <span v-if="video.isPublic" class="cover-public" title="公开视频，所有用户可观看">公开</span>
+    <!-- 左上角徽章组：类型 / 公开 / 审核状态 -->
+    <div class="cover-badges">
+      <span v-if="video.typeName" class="cover-type">{{ video.typeName }}</span>
+      <span v-if="video.isPublic" class="cover-public" title="公开视频，所有用户可观看">公开</span>
+      <span v-if="video.auditStatus === 0" class="cover-audit pending" title="等待管理员审核">待审核</span>
+      <span v-else-if="video.auditStatus === 2" class="cover-audit rejected" title="管理员已驳回，仅自己可见">已驳回</span>
+    </div>
     <button
       class="cover-fav"
       :class="{ active: video.isFavorite }"
@@ -119,6 +126,10 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
       <div class="detail-footer">
         <span class="bar-muted">{{ video.updatedAt }}</span>
         <div class="detail-ops">
+          <template v-if="canAudit && video.auditStatus === 0">
+            <button class="nf-btn sm ghost pass" @click.stop="$emit('audit', video, 1)">通过</button>
+            <button class="nf-btn sm ghost danger" @click.stop="$emit('audit', video, 2)">驳回</button>
+          </template>
           <button v-if="manageable" class="nf-btn sm ghost" @click.stop="$emit('toggle-public', video)">
             {{ video.isPublic ? '设为私有' : '设为公开' }}
           </button>
@@ -378,6 +389,10 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   background: rgba(229, 9, 20, 0.8);
 }
 
+.detail-ops .pass:hover {
+  background: rgba(0, 128, 96, 0.85);
+}
+
 /* ===== 封面角标 ===== */
 .cover-fav {
   position: absolute;
@@ -409,11 +424,20 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   background: rgba(0, 0, 0, 0.55);
 }
 
-.cover-type {
+/* 左上角徽章组：类型 / 公开 / 审核状态 */
+.cover-badges {
   position: absolute;
   top: 10px;
   left: 10px;
   z-index: 4;
+  display: flex;
+  gap: 6px;
+  max-width: calc(100% - 56px);
+  overflow: hidden;
+}
+
+.cover-type {
+  flex-shrink: 0;
   padding: 2px 9px;
   border-radius: 3px;
   background: var(--nf-red);
@@ -425,13 +449,9 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
-/* 公开徽章：紧挨类型徽章右侧 */
+/* 公开徽章：绿色 */
 .cover-public {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 4;
-  margin-left: 52px;
+  flex-shrink: 0;
   padding: 2px 9px;
   border-radius: 3px;
   background: rgba(0, 128, 96, 0.85);
@@ -441,6 +461,27 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   letter-spacing: 1px;
   line-height: 18px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* 审核徽章：待审核黄 / 已驳回红 */
+.cover-audit {
+  flex-shrink: 0;
+  padding: 2px 9px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  line-height: 18px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.cover-audit.pending {
+  background: rgba(190, 138, 0, 0.9);
+}
+
+.cover-audit.rejected {
+  background: rgba(120, 24, 28, 0.92);
 }
 
 /* 非本人公开视频的归属者胶囊 */

@@ -5,6 +5,7 @@ import App from './App.vue'
 import PlayerPage from './PlayerPage.vue'
 import DetailPage from './DetailPage.vue'
 import LoginPage from './LoginPage.vue'
+import AuditCenterPage from './AuditCenterPage.vue'
 import GlobalFeedback from './ui/GlobalFeedback.vue'
 import { vLazyCover } from './composables/useCover'
 import { ensureLoaded, resetAuth } from './composables/useAuth'
@@ -17,15 +18,23 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginPage }, // 登录 / 注册页
     { path: '/detail/:id', name: 'detail', component: DetailPage }, // 影片详情页
     { path: '/play/:id', name: 'play', component: PlayerPage }, // 独立播放页
+    { path: '/audit', name: 'audit', component: AuditCenterPage }, // 审核中心页（仅超管）
   ],
 })
 
-// 全局路由守卫：除登录页外都要先确认登录态
+// 全局路由守卫：先确认登录态，再按页面权限放行
 router.beforeEach(async (to) => {
-  if (to.name === 'login') return true
   const user = await ensureLoaded()
+  // 已登录访问登录页：拦截并送回列表页（防止后退/直达又看到登录表单）
+  if (to.name === 'login') {
+    return user ? { name: 'list' } : true
+  }
   if (!user) {
     return { name: 'login', query: { redirect: to.fullPath } } // 登录后跳回原目标页
+  }
+  // 审核中心仅超级管理员可进，普通用户访问时回落到列表页
+  if (to.name === 'audit' && user.role !== 'admin') {
+    return { name: 'list' }
   }
 })
 

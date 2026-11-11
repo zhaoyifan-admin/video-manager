@@ -23,21 +23,41 @@ def _public(user):
     return {"id": user["id"], "username": user["username"], "role": user.get("role", "user")}
 
 
+def _check_username(username):
+    """用户名占用检测：返回 (可用, 提示语)。注册实时提示与提交校验共用。"""
+    if not USERNAME_RE.match(username):
+        return False, "用户名需 2-50 位，仅限中文、字母、数字、下划线"
+    if db.query("SELECT id FROM users WHERE username = %s", (username,), one=True):
+        return False, "该用户名已被注册"
+    return True, "该用户名可用"
+
+
+@bp.get("/check-username")
+def check_username():
+    """注册用户名实时防重检测（输入框失焦/防抖调用）"""
+    username = (request.args.get("username") or "").strip()
+    available, message = _check_username(username)
+    return ok({"available": available, "message": message})
+
+
 @bp.post("/register")
 def register():
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     password = str(data.get("password") or "")
-    if not USERNAME_RE.match(username):
-        return fail("用户名需 2-50 位，仅限中文、字母、数字、下划线")
+    available, message = _check_username(username)
+    if not available:
+        return fail(message)
     if len(password) < 6:
         return fail("密码至少 6 位")
-    if db.query("SELECT id FROM users WHERE username = %s", (username,), one=True):
-        return fail("用户名已被注册")
-    db.execute(
-        "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
-        (username, hash_password(password)),
-    )
+    try:
+        db.execute(
+            "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
+            (username, hash_password(password)),
+        )
+    except Exception:
+        # 并发注册同名撞 UNIQUE 索引：按防重失败处理，避免 500
+        return fail("该用户名已被注册")
     user = db.query("SELECT id, username FROM users WHERE username = %s", (username,), one=True)
     set_login(user["id"])  # 注册即登录
     return ok(_public(user))

@@ -6,7 +6,7 @@ import os
 from flask import Blueprint, g, request
 
 import db
-from auth import is_super_admin, manageable_sql, require_login, visible_sql
+from auth import is_super_admin, manageable_sql, require_admin, require_login, visible_sql
 from responses import ok, fail
 from storage import delete_source_file
 from thumbnails import remove_thumb
@@ -16,7 +16,7 @@ bp = Blueprint("videos", __name__, url_prefix="/api/videos")
 # 关联查询公共字段（列表与详情共用；owner 为视频归属用户）
 _SELECT_VIDEO = """
     SELECT v.id, v.title, v.file_path, v.description, v.type_id, v.is_favorite,
-           v.is_public, v.user_id AS owner_id, v.created_at, v.updated_at,
+           v.is_public, v.audit_status, v.user_id AS owner_id, v.created_at, v.updated_at,
            GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR '||') AS tag_names,
            tp.name AS type_name, u.username AS owner_name
     FROM videos v
@@ -37,6 +37,7 @@ def serialize_video(row):
         "typeName": row.get("type_name"),
         "isFavorite": bool(row.get("is_favorite")),
         "isPublic": bool(row.get("is_public")),
+        "auditStatus": row.get("audit_status"),
         "ownerId": row.get("owner_id"),
         "ownerName": row.get("owner_name"),
         "description": row["description"],
@@ -97,6 +98,7 @@ def list_videos():
     tag_id = request.args.get("tagId", type=int)
     type_id = request.args.get("typeId", type=int)
     favorite = request.args.get("favorite", 0, type=int)
+    audit_status = request.args.get("auditStatus", type=int)  # 审核筛选：0 待审核 / 1 已通过 / 2 已驳回
     page = max(request.args.get("page", 1, type=int) or 1, 1)
     page_size = min(max(request.args.get("pageSize", 10, type=int) or 10, 1), 100)
 
@@ -115,6 +117,9 @@ def list_videos():
         args.append(type_id)
     if favorite:
         conditions.append("v.is_favorite = 1")
+    if audit_status in (0, 1, 2):
+        conditions.append("v.audit_status = %s")
+        args.append(audit_status)
     where_sql = f"WHERE {' AND '.join(conditions)}"
 
     total = db.query(
@@ -163,9 +168,10 @@ def create_video():
     conn = db.get_conn()
     try:
         with conn.cursor() as cur:
+            # 管理员自己入库的视频直接通过审核，普通用户入库进入待审核
             cur.execute(
-                "INSERT INTO videos (user_id, title, file_path, description, type_id) VALUES (%s, %s, %s, %s, %s)",
-                (g.user["id"], title, file_path, description, type_id),
+                "INSERT INTO videos (user_id, title, file_path, description, type_id, audit_status) VALUES (%s, %s, %s, %s, %s, %s)",
+                (g.user["id"], title, file_path, description, type_id, 1 if is_super_admin(g.user) else 0),
             )
             video_id = cur.lastrowid
         save_video_tags(conn, video_id, tag_names)
@@ -254,18 +260,43 @@ def favorite_video(video_id):
 @bp.post("/<int:video_id>/public")
 @require_login
 def toggle_public(video_id):
-    """切换公开状态：设为公开后所有用户可观看（仅本人或超级管理员）"""
+    """切换公开状态：设为公开后所有用户可观看（仅本人或超级管理员）。
+    前置校验：视频必须已通过审核才允许公开"""
     mg_sql, mg_args = manageable_sql(g.user)
     row = db.query(
-        f"SELECT is_public FROM videos WHERE id = %s AND {mg_sql}",
+        f"SELECT is_public, audit_status FROM videos WHERE id = %s AND {mg_sql}",
         (video_id, *mg_args),
         one=True,
     )
     if not row:
         return fail("视频不存在或无权操作", 404)
     new_val = 0 if row["is_public"] else 1
+    if new_val == 1 and row["audit_status"] != 1:
+        return fail("视频尚未通过审核，不能设为公开")
     db.execute("UPDATE videos SET is_public = %s WHERE id = %s", (new_val, video_id))
     return ok({"isPublic": bool(new_val)})
+
+
+@bp.post("/<int:video_id>/audit")
+@require_login
+@require_admin
+def audit_video(video_id):
+    """管理员审核视频：status 1 通过 / 2 驳回。
+    驳回时自动转为私有（公开前提是已过审），通过时不动公开状态由归属者自行决定"""
+    data = request.get_json(silent=True) or {}
+    status = data.get("status")
+    if status not in (1, 2):
+        return fail("审核状态无效（1 通过 / 2 驳回）")
+
+    row = db.query("SELECT id, audit_status FROM videos WHERE id = %s", (video_id,), one=True)
+    if not row:
+        return fail("视频不存在", 404)
+
+    db.execute("UPDATE videos SET audit_status = %s WHERE id = %s", (status, video_id))
+    if status == 2:
+        # 驳回的视频自动收回公开，避免继续被他人观看
+        db.execute("UPDATE videos SET is_public = 0 WHERE id = %s AND is_public = 1", (video_id,))
+    return ok({"auditStatus": status})
 
 
 @bp.post("/batch")
@@ -316,8 +347,8 @@ def batch_import_videos():
                 description = str(item.get("description") or "").strip()[:1000]
                 try:
                     cur.execute(
-                        "INSERT INTO videos (user_id, title, file_path, description, type_id) VALUES (%s, %s, %s, %s, %s)",
-                        (g.user["id"], title, file_path, description, type_id),
+                        "INSERT INTO videos (user_id, title, file_path, description, type_id, audit_status) VALUES (%s, %s, %s, %s, %s, %s)",
+                        (g.user["id"], title, file_path, description, type_id, 1 if is_super_admin(g.user) else 0),
                     )
                     video_id = cur.lastrowid
                 except Exception as exc:

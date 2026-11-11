@@ -35,6 +35,9 @@ export const login = (username, password) =>
   http.post('/auth/login', { username, password }, { _skipAuthRedirect: true })
 export const logout = () => http.post('/auth/logout', null, { _skipAuthRedirect: true })
 export const getMe = () => http.get('/auth/me', { _skipAuthRedirect: true })
+// 注册用户名实时防重检测：返回 {available, message}
+export const checkUsername = (username) =>
+  http.get('/auth/check-username', { params: { username }, _skipAuthRedirect: true })
 
 // ---------- 标签 ----------
 export const listTags = () => http.get('/tags')
@@ -56,8 +59,11 @@ export const deleteVideo = (id) => http.delete(`/videos/${id}`)
 // 切换收藏状态
 export const toggleFavorite = (id) => http.post(`/videos/${id}/favorite`)
 
-// 切换公开状态（设为公开后所有用户可观看）
+// 切换公开状态（设为公开后所有用户可观看，需先通过审核）
 export const togglePublic = (id) => http.post(`/videos/${id}/public`)
+
+// 管理员审核：status 1 通过 / 2 驳回
+export const auditVideo = (id, status) => http.post(`/videos/${id}/audit`, { status })
 
 // ---------- 保存路径（外接硬盘 / 目录浏览 / 新建文件夹） ----------
 export const listDrives = () => http.get('/paths/drives')

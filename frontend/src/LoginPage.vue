@@ -1,7 +1,7 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { login, register } from './api'
+import { login, register, checkUsername } from './api'
 import { setUser } from './composables/useAuth'
 import { showToast } from './ui/toast'
 
@@ -17,6 +17,59 @@ const isLogin = () => mode.value === 'login'
 
 const switchMode = (m) => {
   mode.value = m
+  resetNameCheck()
+}
+
+// ================= 注册用户名实时防重 =================
+const nameState = ref('idle') // idle 未检测 / checking 检测中 / ok 可用 / taken 已占用 / invalid 格式不合法
+const nameMsg = ref('')
+
+const resetNameCheck = () => {
+  nameState.value = 'idle'
+  nameMsg.value = ''
+}
+
+let nameTimer = null
+const doNameCheck = async () => {
+  const username = form.username.trim()
+  if (isLogin() || !username) {
+    resetNameCheck()
+    return
+  }
+  nameState.value = 'checking'
+  try {
+    const data = await checkUsername(username)
+    // 输入还在变化时丢弃过期结果
+    if (form.username.trim() !== username) return
+    if (data.available) {
+      nameState.value = 'ok'
+    } else {
+      // 格式问题与「已被注册」区分展示
+      nameState.value = /2-50 位/.test(data.message) ? 'invalid' : 'taken'
+    }
+    nameMsg.value = data.message
+  } catch {
+    if (form.username.trim() === username) {
+      nameState.value = 'idle' // 检测失败不阻塞注册，提交时后端仍会校验
+      nameMsg.value = ''
+    }
+  }
+}
+
+// 输入防抖 500ms 自动检测；切到登录模式则清除提示
+watch(
+  () => form.username,
+  () => {
+    resetNameCheck()
+    if (isLogin()) return
+    clearTimeout(nameTimer)
+    nameTimer = setTimeout(doNameCheck, 500)
+  },
+)
+
+const onUsernameBlur = () => {
+  clearTimeout(nameTimer)
+  doNameCheck()
 }
 
 const submit = async () => {
@@ -25,9 +78,19 @@ const submit = async () => {
     showToast.warning('请输入用户名和密码')
     return
   }
-  if (!isLogin() && form.password !== form.password2) {
-    showToast.warning('两次输入的密码不一致')
-    return
+  if (!isLogin()) {
+    // 注册：以最后一次检测结果为准，未检测/过期则补一次
+    if (nameState.value === 'idle' || nameState.value === 'checking') {
+      await doNameCheck()
+    }
+    if (nameState.value === 'taken' || nameState.value === 'invalid') {
+      showToast.warning(nameMsg.value)
+      return
+    }
+    if (form.password !== form.password2) {
+      showToast.warning('两次输入的密码不一致')
+      return
+    }
   }
   submitting.value = true
   try {
@@ -59,13 +122,24 @@ const submit = async () => {
       </p>
 
       <form class="login-form" @submit.prevent="submit">
-        <input
-          v-model="form.username"
-          class="nf-input"
-          placeholder="用户名（中文 / 字母 / 数字 / 下划线）"
-          maxlength="50"
-          autocomplete="username"
-        />
+        <div class="field-wrap">
+          <input
+            v-model="form.username"
+            class="nf-input"
+            :class="{
+              err: nameState === 'taken' || nameState === 'invalid',
+              good: nameState === 'ok',
+            }"
+            placeholder="用户名（中文 / 字母 / 数字 / 下划线）"
+            maxlength="50"
+            autocomplete="username"
+            @blur="onUsernameBlur"
+          />
+          <div v-if="nameState !== 'idle'" class="name-hint" :class="nameState">
+            <template v-if="nameState === 'checking'">检测中…</template>
+            <template v-else>{{ nameMsg }}</template>
+          </div>
+        </div>
         <input
           v-model="form.password"
           class="nf-input"
@@ -162,6 +236,40 @@ const submit = async () => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* 用户名防重：输入框状态色 + 内联提示 */
+.field-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-wrap .nf-input.err {
+  border-color: rgba(229, 9, 20, 0.8);
+}
+
+.field-wrap .nf-input.good {
+  border-color: rgba(0, 168, 120, 0.75);
+}
+
+.name-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--nf-text-muted);
+}
+
+.name-hint.checking {
+  color: var(--nf-text-muted);
+}
+
+.name-hint.taken,
+.name-hint.invalid {
+  color: #ff6b72;
+}
+
+.name-hint.ok {
+  color: #57cf9f;
 }
 
 .submit {

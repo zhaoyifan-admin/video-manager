@@ -46,11 +46,11 @@ def is_super_admin(user):
 
 
 def visible_sql(user):
-    """「可观看」SQL 条件片段：本人视频 OR 公开视频 OR 超管可见全部。
-    列名不带表前缀（videos 是唯一含 user_id / is_public 列的表，多表关联查询中同样无歧义）"""
+    """「可观看」SQL 条件片段：本人视频 OR 已通过审核的公开视频 OR 超管可见全部。
+    列名不带表前缀（videos 是唯一含 user_id / is_public / audit_status 列的表，多表关联查询中同样无歧义）"""
     if is_super_admin(user):
         return "TRUE", []
-    return "(user_id = %s OR is_public = 1)", [user["id"]]
+    return "(user_id = %s OR (is_public = 1 AND audit_status = 1))", [user["id"]]
 
 
 def manageable_sql(user):
@@ -58,6 +58,18 @@ def manageable_sql(user):
     if is_super_admin(user):
         return "TRUE", []
     return "user_id = %s", [user["id"]]
+
+
+def require_admin(fn):
+    """视图装饰器：仅超级管理员可访问（普通用户返回 403），需在 require_login 之后使用"""
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not is_super_admin(g.user):
+            return jsonify({"code": 1, "msg": "需要管理员权限"}), 403
+        return fn(*args, **kwargs)
+
+    return wrapper
 
 
 def require_login(fn):

@@ -1,12 +1,18 @@
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import brandLogo from '../assets/logo.png'
+
+const router = useRouter()
 
 defineProps({
   types: { type: Array, default: () => [] },
   activeTypeId: { type: Number, default: 0 },
   favActive: { type: Boolean, default: false },
   username: { type: String, default: '' },
+  // 管理员入口：审核中心仅 role=admin 可见
+  isAdmin: { type: Boolean, default: false },
+  pendingCount: { type: Number, default: 0 },
 })
 
 const emit = defineEmits(['select-type', 'toggle-fav', 'search', 'manage', 'batch', 'create', 'logout'])
@@ -14,6 +20,9 @@ const emit = defineEmits(['select-type', 'toggle-fav', 'search', 'manage', 'batc
 const keyword = ref('')
 
 const onSearch = () => emit('search', keyword.value.trim())
+
+// 审核中心：独立页面路由跳转
+const goAudit = () => router.push({ name: 'audit' })
 </script>
 
 <template>
@@ -56,6 +65,10 @@ const onSearch = () => emit('search', keyword.value.trim())
           @keyup.enter="onSearch"
         />
       </div>
+      <button v-if="isAdmin" class="nf-btn text audit-entry" @click="goAudit">
+        审核中心
+        <span v-if="pendingCount > 0" class="audit-badge">{{ pendingCount > 99 ? '99+' : pendingCount }}</span>
+      </button>
       <button class="nf-btn text" @click="emit('manage')">管理</button>
       <button class="nf-btn ghost" @click="emit('batch')">批量导入</button>
       <button class="nf-btn red" @click="emit('create')">＋ 新增视频</button>
@@ -215,6 +228,33 @@ const onSearch = () => emit('search', keyword.value.trim())
 
 .search-input::placeholder {
   color: #5c5c63;
+}
+
+/* 审核中心入口：红色文字 + 待审数量角标 */
+.audit-entry {
+  position: relative;
+  color: #ffb3b8;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.audit-entry:hover {
+  color: #fff;
+}
+
+.audit-badge {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--nf-red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 用户区：头像 + 用户名 + 退出 */

@@ -29,8 +29,13 @@ import NfModal from './NfModal.vue'
     </TransitionGroup>
   </div>
 
-  <!-- 全局确认框（替代 ElMessageBox.confirm） -->
-  <NfModal v-model="confirmState.visible" :title="confirmState.title" width="420px">
+  <!-- 全局确认框（替代 ElMessageBox.confirm）：层级高于业务弹窗，叠开时始终可见 -->
+  <NfModal
+    v-model="confirmState.visible"
+    :title="confirmState.title"
+    width="420px"
+    :overlay-z="1200"
+  >
     <p class="nf-confirm-msg">{{ confirmState.message }}</p>
     <template #footer>
       <button class="nf-btn ghost" @click="settleConfirm(false)">取消</button>
