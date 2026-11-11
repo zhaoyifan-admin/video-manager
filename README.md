@@ -104,6 +104,15 @@ cd frontend && npm run build                 # 生产态由 Flask 托管 fronten
 
 生产态直接访问 `http://127.0.0.1:5000`；前端路由（`/play/:id`、`/audit` 等）自动回退到 `index.html`。不要用 PyCharm 内置服务器（63343）直接打开 `dist/index.html`。
 
+**长期运行 / 局域网访问**：Flask 内置服务器只适合开发调试，`DEBUG` 已默认关闭。生产或多人访问请用 waitress（已列入 requirements.txt），并把 `HOST` 改为 `0.0.0.0`：
+
+```bash
+cd backend
+./venv/bin/python -m waitress --host=0.0.0.0 --port=5000 app:app
+```
+
+此时本机路径浏览、播放与删除仍受媒体目录白名单约束；请同时确认 `SECRET_KEY` 已随机化、`REGISTRATION_ENABLED` 符合预期。
+
 ## 审核流程
 
 1. 普通用户新增 / 批量导入 → `audit_status = 0` 待审核，**不进主影库**，导航「审核结果」可查看
