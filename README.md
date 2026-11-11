@@ -34,8 +34,7 @@ video-manager/
 │   │   ├── paths.py        # /api/paths（媒体根目录浏览）
 │   │   ├── audit_logs.py   # /api/audit-logs（全局审核流水）
 │   │   └── extra.py        # 进度/通知/存储体检/重定位/合集/看板
-│   ├── schema.sql          # 全新安装建库脚本
-│   ├── migrate_*.py        # 存量库幂等迁移脚本
+│   ├── schema.sql          # 建库与表/列/注释定义（全新安装与存量升级统一入口）
 │   └── tests/test_core.py  # 常驻回归测试（标准库 unittest，零额外依赖）
 └── frontend/               # Vue3 前端
     └── src/
@@ -54,18 +53,9 @@ video-manager/
 ### 1. 数据库
 
 ```bash
-# 全新安装
+# 全新安装 / 存量库升级：统一执行 schema.sql 即可
+# （CREATE TABLE IF NOT EXISTS 安全幂等：仅补齐缺失的表/列并写入表与列中文注释，已有结构不受影响）
 /usr/local/mysql/bin/mysql -u root -p < backend/schema.sql
-
-# 已有存量数据的库：按功能迭代顺序各执行一次（脚本均幂等，可重复运行）
-cd backend
-./venv/bin/python migrate_users.py          # 用户表与数据归属
-./venv/bin/python migrate_add_public.py     # 公开视频
-./venv/bin/python migrate_add_audit.py      # 审核状态
-./venv/bin/python migrate_add_audit_reason.py  # 驳回理由
-./venv/bin/python migrate_add_audit_logs.py    # 审核留痕表 + 存量补录
-./venv/bin/python migrate_add_popularity.py    # 播放计数 + 按用户收藏
-./venv/bin/python migrate_add_experience.py    # 索引 / 进度 / 通知 / 合集 / 去重
 ```
 
 超管初始账号 `admin / admin123`，**上线后请立即改密**。

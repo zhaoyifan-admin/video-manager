@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import brandLogo from '../assets/logo.png'
 
@@ -48,6 +48,25 @@ const catClass = (active, fav) => {
 // 角标共用工具类
 const badge = (color) =>
   `min-w-[17px] h-[17px] px-[5px] rounded-full text-white text-[11px] font-bold leading-[17px] text-center tabular-nums ${color}`
+
+// ===== 更多功能下拉：收起低频操作，缓解导航拥挤 =====
+// 默认展开在栏上的：搜索 / 审核中心(角标) / 审核结果(角标) / 新增视频 / 用户
+// 收进「更多」的：站点管理(超管) / 标签·类型管理 / 批量导入
+const dropdownOpen = ref(false)
+const moreRef = ref(null)
+const toggleMore = () => {
+  dropdownOpen.value = !dropdownOpen.value
+}
+const closeMore = () => {
+  dropdownOpen.value = false
+}
+const onDocClick = (e) => {
+  if (dropdownOpen.value && moreRef.value && !moreRef.value.contains(e.target)) {
+    dropdownOpen.value = false
+  }
+}
+onMounted(() => document.addEventListener('click', onDocClick))
+onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 </script>
 
 <template>
@@ -113,7 +132,6 @@ const badge = (color) =>
           {{ pendingCount > 99 ? '99+' : pendingCount }}
         </span>
       </button>
-      <button v-if="isAdmin" class="nf-btn text" @click="goAdmin">站点管理</button>
       <button
         class="nf-btn text text-[#ffb3b8] hover:text-white"
         title="查看我上传视频的审核结果"
@@ -124,8 +142,31 @@ const badge = (color) =>
           {{ noticeCount > 99 ? '99+' : noticeCount }}
         </span>
       </button>
-      <button class="nf-btn text" @click="emit('manage')">管理</button>
-      <button class="nf-btn ghost" @click="emit('batch')">批量导入</button>
+
+      <!-- 更多功能：收起低频操作，缓解导航拥挤 -->
+      <div class="relative" ref="moreRef">
+        <button
+          class="nf-btn ghost px-3"
+          title="更多功能"
+          @click.stop="toggleMore"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" class="block">
+            <path
+              d="M6 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+        <div
+          v-if="dropdownOpen"
+          class="absolute right-0 top-[calc(100%+8px)] z-[110] min-w-[160px] py-1.5 rounded-xl border border-white/10 bg-nf-elevated shadow-[0_12px_32px_rgba(0,0,0,0.55)] backdrop-blur-[10px]"
+        >
+          <button v-if="isAdmin" class="nf-btn-menu" @click="closeMore(); goAdmin()">站点管理</button>
+          <button class="nf-btn-menu" @click="closeMore(); emit('manage')">标签 / 类型管理</button>
+          <button class="nf-btn-menu" @click="closeMore(); emit('batch')">批量导入</button>
+        </div>
+      </div>
+
       <button class="nf-btn red" @click="emit('create')">＋ 新增视频</button>
       <div class="flex items-center gap-2 py-1 pr-1.5 pl-1 rounded-[20px] bg-white/5">
         <span

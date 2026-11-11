@@ -97,7 +97,14 @@ def login():
 
 
 @bp.post("/logout")
+@require_login
 def logout():
+    # 退出时清空本人「继续观看」续播进度，下次登录不再残留上次进度
+    try:
+        db.execute("DELETE FROM watch_history WHERE user_id = %s", (g.user["id"],))
+    except Exception:
+        # 续播表异常不影响正常退出
+        pass
     clear_login()
     return ok()
 

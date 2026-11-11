@@ -202,7 +202,7 @@ const removeCollection = async (row) => {
         </select>
         <button class="nf-btn red" @click="addUser">＋ 创建账号</button>
       </div>
-      <div class="table-scroll">
+      <div class="table-scroll my-3">
         <table class="admin-table">
           <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>影片数</th><th>注册时间</th></tr></thead>
           <tbody>
@@ -237,7 +237,7 @@ const removeCollection = async (row) => {
       </ul>
       <p class="block-hint">视频若放在其他位置，请在 <code>backend/config.py</code> 的 <code>MEDIA_ROOTS</code> 中登记后重启后端。</p>
 
-      <div class="table-scroll" v-if="integrity.missing.length">
+      <div class="table-scroll my-3" v-if="integrity.missing.length">
         <table class="admin-table">
           <thead><tr><th>影片</th><th>记录的源路径</th></tr></thead>
           <tbody>
@@ -269,7 +269,7 @@ const removeCollection = async (row) => {
         <input v-model="newCollection.description" class="nf-input" placeholder="备注（可选）" maxlength="500" />
         <button class="nf-btn red" @click="addCollection">＋ 新建合集</button>
       </div>
-      <div class="table-scroll">
+      <div class="table-scroll my-3">
         <table class="admin-table">
           <thead><tr><th>名称</th><th>备注</th><th>影片数</th><th>操作</th></tr></thead>
           <tbody>
@@ -317,7 +317,7 @@ const removeCollection = async (row) => {
 .admin-table code { font-size: 12px; color: #b3b3b3; word-break: break-all; }
 .muted { color: var(--nf-text-muted); text-align: center; }
 .good { color: #46d369; } .bad { color: var(--nf-red); }
-.admin-select { height: 28px; padding: 0 8px; border: 1px solid #38383f; border-radius: 4px; background: #202025; color: #e5e5e5; font-size: 12.5px; }
+.admin-select { height: 34px; padding: 0 8px; border: 1px solid #38383f; border-radius: 4px; background: #202025; color: #e5e5e5; font-size: 12.5px; }
 .integrity-summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; color: #d2d2d2; }
 .integrity-summary b { color: #fff; }
 .root-list { display: flex; flex-direction: column; gap: 6px; padding-left: 18px; margin: 0; }
