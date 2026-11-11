@@ -288,7 +288,7 @@ const removeCollection = async (row) => {
 
 <style scoped>
 .admin-page { max-width: 1200px; margin: 0 auto; padding: 26px 40px 60px; }
-.admin-head { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.admin-head { display: flex; gap: 16px; margin-bottom: 24px; }
 .back-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 15px; border: none; border-radius: 5px; background: rgba(255,255,255,.12); color: #f5f5f5; font-size: 13px; font-weight: 600; cursor: pointer; }
 .back-btn:hover { background: rgba(255,255,255,.22); }
 .admin-title { margin: 0 0 4px; font-size: 24px; font-weight: 800; letter-spacing: 1px; color: #fff; }
