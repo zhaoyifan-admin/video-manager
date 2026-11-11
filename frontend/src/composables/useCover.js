@@ -83,17 +83,30 @@ const captureByCanvas = (row) => {
   })
 }
 
-export const captureCover = (row) => {
+const pendingRetry = {} // { [videoId]: 已重试次数 }
+
+export const captureCover = async (row) => {
   if (coverCache.value[row.id] !== undefined || !row.filePath) return
   // 外链视频无法由后端抽帧，直接走前端截帧
   if (/^https?:\/\//.test(row.filePath)) return captureByCanvas(row)
-  // 本地文件：优先加载后端 ffmpeg 预生成/现场生成的缩略图
-  const img = new Image()
-  img.onload = () => {
-    coverCache.value[row.id] = `/api/videos/${row.id}/thumb`
+
+  // 后端改为「占位图 + 后台异步生成」：先读响应头判断是否仍在生成中
+  const url = `/api/videos/${row.id}/thumb`
+  try {
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return captureByCanvas(row)
+    if (res.headers.get('X-Thumb-Pending') === '1') {
+      const n = (pendingRetry[row.id] || 0) + 1
+      pendingRetry[row.id] = n
+      if (n <= 4) setTimeout(() => captureCover(row), n * 1500)
+      else captureByCanvas(row) // 生成失败则退回前端截帧
+      return
+    }
+    delete pendingRetry[row.id]
+    coverCache.value[row.id] = url
+  } catch {
+    captureByCanvas(row)
   }
-  img.onerror = () => captureByCanvas(row) // 未装 ffmpeg 等场景回退前端截帧
-  img.src = `/api/videos/${row.id}/thumb`
 }
 
 // 卡片进入可视区域（提前 200px）才开始截帧，避免一次性加载全部视频

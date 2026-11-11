@@ -4,7 +4,11 @@ import { showToast } from '../ui/toast'
 
 // ================= 视频查询 / 分页（全局单例状态） =================
 // typeId / tagId 均用 0 表示「全部」（后端对 0 不做过滤）
-const query = reactive({ keyword: '', tagId: 0, typeId: 0, favorite: 0, page: 1, pageSize: 12 })
+const query = reactive({
+  keyword: '', tagId: 0, typeId: 0, favorite: 0,
+  sort: 'updated', collectionId: 0, ownerId: 0,
+  page: 1, pageSize: 12,
+})
 const total = ref(0)
 const videos = ref([])
 const loading = ref(false)

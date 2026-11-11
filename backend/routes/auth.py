@@ -1,13 +1,17 @@
-"""认证接口：注册 / 登录 / 退出 / 当前用户（/api/auth）"""
+"""认证接口：注册 / 登录 / 退出 / 当前用户 / 角色管理（/api/auth）"""
 import re
 
-from flask import Blueprint, request
+from flask import Blueprint, g, request
 
+import config
 import db
 from auth import (
     clear_login,
     current_user,
     hash_password,
+    is_super_admin,
+    require_admin,
+    require_login,
     set_login,
     verify_password,
 )
@@ -32,9 +36,20 @@ def _check_username(username):
     return True, "该用户名可用"
 
 
+@bp.get("/config")
+def client_config():
+    """前端启动时读取的公开配置：注册开关、单用户配额"""
+    return ok({
+        "registrationEnabled": bool(getattr(config, "REGISTRATION_ENABLED", True)),
+        "maxVideosPerUser": int(getattr(config, "MAX_VIDEOS_PER_USER", 0) or 0),
+    })
+
+
 @bp.get("/check-username")
 def check_username():
     """注册用户名实时防重检测（输入框失焦/防抖调用）"""
+    if not getattr(config, "REGISTRATION_ENABLED", True):
+        return ok({"available": False, "message": "本站已关闭新用户注册"})
     username = (request.args.get("username") or "").strip()
     available, message = _check_username(username)
     return ok({"available": available, "message": message})
@@ -42,6 +57,8 @@ def check_username():
 
 @bp.post("/register")
 def register():
+    if not getattr(config, "REGISTRATION_ENABLED", True):
+        return fail("本站已关闭新用户注册，请联系管理员")
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     password = str(data.get("password") or "")
@@ -91,3 +108,62 @@ def me():
     if not user:
         return fail("未登录", 401)
     return ok(_public(user))
+
+
+@bp.get("/users")
+@require_login
+@require_admin
+def list_users():
+    """超管查看账号列表与各账号的视频数量（用于分配审核员角色）"""
+    rows = db.query(
+        "SELECT u.id, u.username, u.role, u.created_at, "
+        "(SELECT COUNT(*) FROM videos v WHERE v.user_id = u.id) AS video_count "
+        "FROM users u ORDER BY u.id"
+    )
+    return ok({"items": [{
+        "id": r["id"],
+        "username": r["username"],
+        "role": r["role"],
+        "videoCount": r["video_count"],
+        "createdAt": r["created_at"].strftime("%Y-%m-%d %H:%M:%S"),
+    } for r in rows]})
+
+
+@bp.post("/users/<int:user_id>/role")
+@require_login
+@require_admin
+def change_role(user_id):
+    """设置账号角色：user 普通用户 / reviewer 独立审核员 / admin 超级管理员"""
+    role = (request.get_json(silent=True) or {}).get("role")
+    if role not in ("user", "reviewer", "admin"):
+        return fail("角色无效（user / reviewer / admin）")
+    if user_id == g.user["id"] and role != "admin":
+        return fail("不能降低自己的管理员权限")
+    result = db.execute("UPDATE users SET role = %s WHERE id = %s", (role, user_id))
+    if result["rowcount"] == 0:
+        return fail("用户不存在", 404)
+    return ok({"role": role})
+
+
+@bp.post("/users")
+@require_login
+@require_admin
+def create_user():
+    """超管直接创建账号：关闭注册后仍可由管理员统一分配账号"""
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = str(data.get("password") or "")
+    role = data.get("role") or "user"
+    if not USERNAME_RE.match(username):
+        return fail("用户名需 2-50 位，仅限中文、字母、数字、下划线")
+    if len(password) < 6:
+        return fail("密码至少 6 位")
+    if role not in ("user", "reviewer", "admin"):
+        return fail("角色无效（user / reviewer / admin）")
+    if db.query("SELECT id FROM users WHERE username = %s", (username,), one=True):
+        return fail("该用户名已被注册")
+    result = db.execute(
+        "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
+        (username, hash_password(password), role),
+    )
+    return ok({"id": result["lastrowid"], "username": username, "role": role})

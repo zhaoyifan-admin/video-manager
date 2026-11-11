@@ -1,7 +1,12 @@
 <script setup>
-import { toasts } from './toast'
+import { toasts, dismissToast } from './toast'
 import { confirmState, settleConfirm } from './confirm'
 import NfModal from './NfModal.vue'
+
+const runAction = (t) => {
+  dismissToast(t.id)
+  t.action?.onClick?.()
+}
 </script>
 
 <template>
@@ -25,6 +30,7 @@ import NfModal from './NfModal.vue'
           />
         </svg>
         <span class="nf-toast-text">{{ t.message }}</span>
+        <button v-if="t.action" class="nf-toast-action" @click="runAction(t)">{{ t.action.label }}</button>
       </div>
     </TransitionGroup>
   </div>
@@ -100,6 +106,24 @@ import NfModal from './NfModal.vue'
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+}
+
+.nf-toast-action {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid rgba(229, 9, 20, 0.65);
+  border-radius: 4px;
+  background: rgba(229, 9, 20, 0.16);
+  color: #ff9ba0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.nf-toast-action:hover {
+  background: var(--nf-red);
+  color: #fff;
 }
 
 .nf-toast-enter-active,

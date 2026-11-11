@@ -35,6 +35,14 @@ export const login = (username, password) =>
   http.post('/auth/login', { username, password }, { _skipAuthRedirect: true })
 export const logout = () => http.post('/auth/logout', null, { _skipAuthRedirect: true })
 export const getMe = () => http.get('/auth/me', { _skipAuthRedirect: true })
+// 公开运行配置（注册开关 / 单用户配额）
+export const getAuthConfig = () => http.get('/auth/config', { _skipAuthRedirect: true })
+// 超管：账号列表与角色分配（user / reviewer / admin）
+export const listUsers = () => http.get('/auth/users')
+export const setUserRole = (id, role) => http.post(`/auth/users/${id}/role`, { role })
+export const createUser = (username, password, role) =>
+  http.post('/auth/users', { username, password, role })
+
 // 注册用户名实时防重检测：返回 {available, message}
 export const checkUsername = (username) =>
   http.get('/auth/check-username', { params: { username }, _skipAuthRedirect: true })
@@ -56,14 +64,25 @@ export const createVideo = (data) => http.post('/videos', data)
 export const updateVideo = (id, data) => http.put(`/videos/${id}`, data)
 export const deleteVideo = (id) => http.delete(`/videos/${id}`)
 
-// 切换收藏状态
+// 大图轮播：按热度（播放次数 + 收藏人数×5）取最多 9 条已过审可见视频
+export const getFeaturedVideos = () => http.get('/videos/featured')
+// 打开播放页上报一次点击/播放（用于热度统计）
+export const recordView = (id) => http.post(`/videos/${id}/view`)
+
+// 切换收藏状态（按当前用户记录，返回 {isFavorite, favoriteCount}）
 export const toggleFavorite = (id) => http.post(`/videos/${id}/favorite`)
 
 // 切换公开状态（设为公开后所有用户可观看，需先通过审核）
 export const togglePublic = (id) => http.post(`/videos/${id}/public`)
 
-// 管理员审核：status 1 通过 / 2 驳回
-export const auditVideo = (id, status) => http.post(`/videos/${id}/audit`, { status })
+// 管理员审核：status 1 通过 / 2 驳回（驳回必须带 reason，会展示给上传用户）
+export const auditVideo = (id, status, reason = '') =>
+  http.post(`/videos/${id}/audit`, { status, reason })
+
+// 审核留痕：单条视频的完整时间线（本人或超管可查）
+export const getAuditLogs = (id) => http.get(`/videos/${id}/audit-logs`)
+// 审核留痕：全局流水（仅超管，支持 keyword / action / page / pageSize）
+export const listAuditLogs = (params) => http.get('/audit-logs', { params })
 
 // ---------- 保存路径（外接硬盘 / 目录浏览 / 新建文件夹） ----------
 export const listDrives = () => http.get('/paths/drives')
@@ -84,3 +103,30 @@ export const uploadVideoFile = (file, saveDir, fileName) => {
 
 // 批量导入视频
 export const batchImportVideos = (items) => http.post('/videos/batch', { items }, { timeout: 30000 })
+
+// ---------- 观看进度 / 续播 ----------
+export const getProgress = (id) => http.get(`/videos/${id}/progress`)
+export const saveProgress = (id, position, duration) =>
+  http.post(`/videos/${id}/progress`, { position, duration })
+export const getWatchHistory = () => http.get('/watch-history')
+
+// ---------- 审核结果通知 ----------
+export const getUnreadCount = () => http.get('/notifications/unread-count')
+export const getNotifications = () => http.get('/notifications')
+export const markNotificationsRead = (ids) => http.post('/notifications/read', { ids })
+// 播放页编码兼容探测（MKV / HEVC 等浏览器不支持时给出明确原因）
+export const getMediaInfo = (id) => http.get(`/videos/${id}/media-info`)
+
+// ---------- 存储体检 / 路径重定位 ----------
+export const getIntegrity = () => http.get('/videos/integrity')
+export const relocateVideos = (oldPrefix, newPrefix, dryRun = true) =>
+  http.post('/videos/relocate', { oldPrefix, newPrefix, dryRun })
+
+// ---------- 合集 ----------
+export const listCollections = () => http.get('/collections')
+export const createCollection = (name, description = '') =>
+  http.post('/collections', { name, description })
+export const deleteCollection = (id) => http.delete(`/collections/${id}`)
+
+// ---------- 管理员看板 ----------
+export const getAdminOverview = () => http.get('/admin/overview')

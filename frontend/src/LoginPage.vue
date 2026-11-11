@@ -1,7 +1,7 @@
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { login, register, checkUsername } from './api'
+import { login, register, checkUsername, getAuthConfig } from './api'
 import { setUser } from './composables/useAuth'
 import { showToast } from './ui/toast'
 
@@ -11,11 +11,25 @@ const router = useRouter()
 // mode: 'login' | 'register'，两种模式共用一个表单
 const mode = ref('login')
 const submitting = ref(false)
+const registrationEnabled = ref(true)
 const form = reactive({ username: '', password: '', password2: '' })
+
+onMounted(async () => {
+  try {
+    const cfg = await getAuthConfig()
+    registrationEnabled.value = !!cfg.registrationEnabled
+  } catch {
+    // 配置读取失败时保持默认开放，后端仍会做最终校验
+  }
+})
 
 const isLogin = () => mode.value === 'login'
 
 const switchMode = (m) => {
+  if (m === 'register' && !registrationEnabled.value) {
+    showToast.warning('本站已关闭新用户注册，请联系管理员')
+    return
+  }
   mode.value = m
   resetNameCheck()
 }
@@ -164,7 +178,10 @@ const submit = async () => {
 
       <div class="login-switch">
         <template v-if="isLogin()">
-          还没有账号？<a class="switch-link" @click="switchMode('register')">立即注册</a>
+          <template v-if="registrationEnabled">
+            还没有账号？<a class="switch-link" @click="switchMode('register')">立即注册</a>
+          </template>
+          <span v-else class="switch-closed">本站已关闭新用户注册，请联系管理员</span>
         </template>
         <template v-else>
           已有账号？<a class="switch-link" @click="switchMode('login')">直接登录</a>
@@ -292,5 +309,9 @@ const submit = async () => {
 
 .switch-link:hover {
   color: #fff;
+}
+
+.switch-closed {
+  color: #8b8b92;
 }
 </style>

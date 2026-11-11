@@ -1,10 +1,14 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import NfModal from '../ui/NfModal.vue'
 import { batchImportVideos } from '../api'
+import { useAuth } from '../composables/useAuth'
 import { showToast } from '../ui/toast'
 
 const emit = defineEmits(['imported'])
+
+const { user } = useAuth()
+const isSuperAdmin = computed(() => user.value?.role === 'admin')
 
 const visible = ref(false)
 const batchText = ref('')
@@ -63,7 +67,11 @@ const doBatchImport = async () => {
           data.failed.map((f) => `第${f.index + 1}行 ${f.msg}`).join('；'),
       )
     } else {
-      showToast(`成功导入 ${data.success} 条视频`)
+      showToast(
+        isSuperAdmin.value
+          ? `成功导入 ${data.success} 条视频（管理员入库自动通过审核）`
+          : `成功导入 ${data.success} 条视频，待管理员审核通过后才会在影库展示；可在「审核结果」查看进度`,
+      )
     }
     visible.value = false
     batchText.value = ''

@@ -3,17 +3,19 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useCover } from '../composables/useCover'
 
 const props = defineProps({
-  videos: { type: Array, default: () => [] }, // 全量列表，内部取前 5 条做轮播
+  // 后端已按热度（播放次数 + 收藏人数×5）排序好的轮播候选，最多展示 9 条
+  videos: { type: Array, default: () => [] },
 })
 
 defineEmits(['play', 'detail'])
 
 const { coverCache, captureCover } = useCover()
 
-// ================= Hero 轮播（取列表前 5 条） =================
+// ================= Hero 轮播（热度前 9 条） =================
+const MAX_SLIDES = 9
 const heroIndex = ref(0)
 let heroTimer = null
-const featured = computed(() => props.videos.slice(0, 5))
+const featured = computed(() => props.videos.slice(0, MAX_SLIDES))
 
 const startHero = () => {
   stopHero()
@@ -73,6 +75,11 @@ onUnmounted(stopHero)
         <p class="hero-desc">{{ v.description || v.filePath }}</p>
         <div v-if="v.tags.length" class="hero-tags">
           <span v-for="name in v.tags" :key="name" class="hero-chip">{{ name }}</span>
+        </div>
+        <!-- 热度数据：轮播正是按这两项排序选出来的 -->
+        <div class="hero-stats">
+          <span class="hero-stat">▶ {{ v.viewCount || 0 }} 次播放</span>
+          <span class="hero-stat">★ {{ v.favoriteCount || 0 }} 人收藏</span>
         </div>
         <div class="hero-actions">
           <button class="nf-btn red lg" @click="$emit('play', v)">
@@ -199,7 +206,24 @@ onUnmounted(stopHero)
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 22px;
+  margin-bottom: 12px;
+}
+
+/* 热度数据（播放 / 收藏） */
+.hero-stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.hero-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .hero-chip {

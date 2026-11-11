@@ -1,15 +1,31 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import NfModal from '../ui/NfModal.vue'
 import PathPickerModal from './PathPickerModal.vue'
-import { listTags, listTypes, createType, createVideo, updateVideo, uploadVideoFile } from '../api'
+import {
+  listTags, listTypes, listCollections, createType,
+  createVideo, updateVideo, uploadVideoFile,
+} from '../api'
+import { useAuth } from '../composables/useAuth'
 import { showToast } from '../ui/toast'
 
 const emit = defineEmits(['saved'])
+const router = useRouter()
+
+const { user } = useAuth()
+const isSuperAdmin = computed(() => user.value?.role === 'admin')
 
 const visible = ref(false)
 const submitting = ref(false)
-const form = reactive({ id: null, title: '', filePath: '', typeId: null, tags: [], description: '' })
+const form = reactive({
+  id: null, title: '', filePath: '', subtitlePath: '', collectionId: null,
+  typeId: null, tags: [], description: '',
+  isPublic: false, auditStatus: 0, auditReason: '',
+})
+const collections = ref([])
+const originalPath = ref('')
+const originalSubtitle = ref('')
 const newTypeNameInline = ref('') // 直接输入新类型，保存时自动创建
 const newFormTag = ref('') // 直接输入新标签，回车加入
 
@@ -21,24 +37,48 @@ const open = async (row = null) => {
   form.id = row?.id ?? null
   form.title = row?.title ?? ''
   form.filePath = row?.filePath ?? ''
+  form.subtitlePath = row?.subtitlePath ?? ''
+  form.collectionId = row?.collectionId ?? null
   form.typeId = row?.typeId ?? null
   form.tags = row ? [...row.tags] : []
   form.description = row?.description ?? ''
+  form.isPublic = row?.isPublic ?? false
+  form.auditStatus = row?.auditStatus ?? 0
+  form.auditReason = row?.auditReason ?? ''
+  originalPath.value = form.filePath
+  originalSubtitle.value = form.subtitlePath
   newTypeNameInline.value = ''
   newFormTag.value = ''
   pendingFile.value = null
   saveDir.value = ''
   visible.value = true
   try {
-    const [t, tp] = await Promise.all([listTags(), listTypes()])
+    const [t, tp, cs] = await Promise.all([listTags(), listTypes(), listCollections()])
     tags.value = t
     types.value = tp
+    collections.value = cs.items
   } catch (e) {
     showToast.error(e.message)
   }
 }
 
 defineExpose({ open })
+
+// 公开展示：仅「已通过审核」的视频可设置；未过审时置灰并说明原因
+const canSetPublic = computed(() => !!form.id && form.auditStatus === 1)
+const isRejected = computed(() => !!form.id && form.auditStatus === 2)
+// 换了源文件或字幕 = 换了内容，保存后必须重新审核并收回公开（防绕过）
+const contentChanged = computed(() => !!form.id && (
+  form.filePath.trim() !== originalPath.value ||
+  form.subtitlePath.trim() !== originalSubtitle.value
+))
+
+const publicHint = computed(() => {
+  if (!form.id) return '新上传的视频需先通过管理员审核，通过后才能在此设置公开'
+  if (form.auditStatus === 0) return '等待管理员审核中，通过后才能设为公开'
+  if (form.auditStatus === 2) return '保存后会重新提交审核，审核期间不可公开'
+  return '勾选后所有用户可观看；取消则仅自己可见'
+})
 
 const toggleFormTag = (name) => {
   const i = form.tags.indexOf(name)
@@ -116,16 +156,27 @@ const submitForm = async () => {
     const payload = {
       title: form.title.trim(),
       filePath,
+      subtitlePath: form.subtitlePath.trim(),
+      collectionId: form.collectionId ?? null,
       typeId: typeId ?? null,
       tags: form.tags,
       description: form.description.trim(),
+      isPublic: canSetPublic.value && form.isPublic,
     }
     if (form.id) {
-      await updateVideo(form.id, payload)
-      showToast('已保存')
+      const data = await updateVideo(form.id, payload)
+      showToast(data?.resubmitted ? '已修改并重新提交审核，等待管理员复核' : '已保存')
     } else {
       await createVideo(payload)
-      showToast('已新增')
+      if (isSuperAdmin.value) {
+        showToast('已新增')
+      } else {
+        showToast.withAction(
+          '已提交审核，可在「审核结果」查看进度',
+          '查看我的提交',
+          () => router.push({ name: 'mySubmissions' }),
+        )
+      }
     }
     visible.value = false
     emit('saved', { isEdit: !!form.id })
@@ -139,6 +190,15 @@ const submitForm = async () => {
 
 <template>
   <NfModal v-model="visible" :title="form.id ? '编辑影片' : '新增影片'" width="560px">
+    <!-- 被驳回的视频：打开编辑时先告知理由，说明保存即重新送审 -->
+    <div v-if="isRejected" class="form-reject-note">
+      <strong>审核未通过</strong>
+      <span>{{ form.auditReason || '管理员未填写理由' }}</span>
+      <span class="form-reject-tip">请按要求修改（可重新选择文件上传），保存后将自动重新提交审核。</span>
+    </div>
+    <div v-if="contentChanged" class="form-resubmit-note">
+      更换了视频文件或字幕，保存后该片会<b>重新进入待审核</b>并自动收回公开状态，需管理员复核通过后才能再次公开。
+    </div>
     <div class="nf-field">
       <label class="nf-label">标题</label>
       <input v-model="form.title" class="nf-input" placeholder="视频标题" maxlength="200" />
@@ -174,9 +234,26 @@ const submitForm = async () => {
       <input
         v-model="form.filePath"
         class="nf-input"
-        placeholder="上传后自动填入，或手动输入本地路径 / 播放链接"
+        placeholder="上传后自动填入，或手动输入已登记媒体目录下的视频绝对路径"
         maxlength="500"
       />
+      <span class="upload-hint">路径需位于允许的媒体目录内（uploads / 外接硬盘 / 常用媒体目录，或 config.py 的 MEDIA_ROOTS）</span>
+    </div>
+    <div class="nf-field">
+      <label class="nf-label">字幕文件（可选，.vtt / .srt）</label>
+      <input
+        v-model="form.subtitlePath"
+        class="nf-input"
+        placeholder="字幕文件的绝对路径，留空表示不使用字幕"
+        maxlength="500"
+      />
+    </div>
+    <div class="nf-field">
+      <label class="nf-label">所属合集（可选）</label>
+      <select v-model="form.collectionId" class="nf-input">
+        <option :value="null">不加入合集</option>
+        <option v-for="c in collections" :key="c.id" :value="c.id">{{ c.name }}</option>
+      </select>
     </div>
     <div class="nf-field">
       <label class="nf-label">影视类型（单选）</label>
@@ -233,6 +310,14 @@ const submitForm = async () => {
         placeholder="剧情简介、备注信息…"
       ></textarea>
     </div>
+    <div class="nf-field">
+      <label class="nf-label">公开展示</label>
+      <label class="public-toggle" :class="{ disabled: !canSetPublic }">
+        <input v-model="form.isPublic" type="checkbox" :disabled="!canSetPublic" />
+        <span>允许所有用户观看</span>
+      </label>
+      <div class="public-hint">{{ publicHint }}</div>
+    </div>
     <template #footer>
       <button class="nf-btn ghost" @click="visible = false">取消</button>
       <button class="nf-btn red" :disabled="submitting" @click="submitForm">
@@ -250,6 +335,76 @@ const submitForm = async () => {
 </template>
 
 <style scoped>
+/* 驳回理由提示 */
+.form-reject-note {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-left: 3px solid #ff525b;
+  border-radius: 4px;
+  background: rgba(112, 14, 20, 0.28);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #ffd0d2;
+  word-break: break-all;
+}
+
+.form-reject-note strong {
+  font-size: 13px;
+}
+
+.form-reject-tip {
+  color: #ffb3b8;
+}
+
+.form-resubmit-note {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-left: 3px solid #e6a01e;
+  border-radius: 4px;
+  background: rgba(120, 80, 10, 0.25);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #f0d9a8;
+}
+
+.form-resubmit-note b {
+  color: #ffd479;
+}
+
+/* 公开展示勾选 */
+.public-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: #f5f5f5;
+  cursor: pointer;
+  user-select: none;
+}
+
+.public-toggle.disabled {
+  color: var(--nf-text-muted);
+  cursor: not-allowed;
+}
+
+.public-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--nf-red);
+  cursor: inherit;
+}
+
+.public-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--nf-text-muted);
+}
+
 /* ===== 上传区 ===== */
 .upload-row {
   display: flex;

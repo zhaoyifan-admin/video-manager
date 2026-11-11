@@ -10,9 +10,12 @@ defineProps({
   activeTypeId: { type: Number, default: 0 },
   favActive: { type: Boolean, default: false },
   username: { type: String, default: '' },
-  // 管理员入口：审核中心仅 role=admin 可见
+  // 审核中心入口：role=admin 或 reviewer
   isAdmin: { type: Boolean, default: false },
+  canAudit: { type: Boolean, default: false },
   pendingCount: { type: Number, default: 0 },
+  // 本人被驳回的视频数量（「审核结果」角标）
+  noticeCount: { type: Number, default: 0 },
 })
 
 const emit = defineEmits(['select-type', 'toggle-fav', 'search', 'manage', 'batch', 'create', 'logout'])
@@ -21,8 +24,12 @@ const keyword = ref('')
 
 const onSearch = () => emit('search', keyword.value.trim())
 
-// 审核中心：独立页面路由跳转
+// 审核中心 / 站点管理：独立页面路由跳转
 const goAudit = () => router.push({ name: 'audit' })
+const goAdmin = () => router.push({ name: 'admin' })
+
+// 我的提交 / 审核结果：查看自己待审与被驳回的视频及理由
+const goSubmissions = () => router.push({ name: 'mySubmissions' })
 </script>
 
 <template>
@@ -65,9 +72,14 @@ const goAudit = () => router.push({ name: 'audit' })
           @keyup.enter="onSearch"
         />
       </div>
-      <button v-if="isAdmin" class="nf-btn text audit-entry" @click="goAudit">
+      <button v-if="canAudit" class="nf-btn text audit-entry" @click="goAudit">
         审核中心
         <span v-if="pendingCount > 0" class="audit-badge">{{ pendingCount > 99 ? '99+' : pendingCount }}</span>
+      </button>
+      <button v-if="isAdmin" class="nf-btn text audit-entry" @click="goAdmin">站点管理</button>
+      <button class="nf-btn text notice-entry" @click="goSubmissions" title="查看我上传视频的审核结果">
+        审核结果
+        <span v-if="noticeCount > 0" class="notice-badge">{{ noticeCount > 99 ? '99+' : noticeCount }}</span>
       </button>
       <button class="nf-btn text" @click="emit('manage')">管理</button>
       <button class="nf-btn ghost" @click="emit('batch')">批量导入</button>
@@ -249,6 +261,33 @@ const goAudit = () => router.push({ name: 'audit' })
   padding: 0 5px;
   border-radius: 9px;
   background: var(--nf-red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 审核结果入口：本人被驳回数量角标 */
+.notice-entry {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #ffb3b8;
+}
+
+.notice-entry:hover {
+  color: #fff;
+}
+
+.notice-badge {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #b8141c;
   color: #fff;
   font-size: 11px;
   font-weight: 700;

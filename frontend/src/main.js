@@ -6,6 +6,8 @@ import PlayerPage from './PlayerPage.vue'
 import DetailPage from './DetailPage.vue'
 import LoginPage from './LoginPage.vue'
 import AuditCenterPage from './AuditCenterPage.vue'
+import MySubmissionsPage from './MySubmissionsPage.vue'
+import AdminPage from './AdminPage.vue'
 import GlobalFeedback from './ui/GlobalFeedback.vue'
 import { vLazyCover } from './composables/useCover'
 import { ensureLoaded, resetAuth } from './composables/useAuth'
@@ -18,7 +20,9 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginPage }, // 登录 / 注册页
     { path: '/detail/:id', name: 'detail', component: DetailPage }, // 影片详情页
     { path: '/play/:id', name: 'play', component: PlayerPage }, // 独立播放页
-    { path: '/audit', name: 'audit', component: AuditCenterPage }, // 审核中心页（仅超管）
+    { path: '/audit', name: 'audit', component: AuditCenterPage }, // 审核中心页（超管 / 审核员）
+    { path: '/my-submissions', name: 'mySubmissions', component: MySubmissionsPage }, // 我的提交（审核结果）页
+    { path: '/admin', name: 'admin', component: AdminPage }, // 站点管理（仅超管：看板 / 用户 / 存储 / 合集）
   ],
 })
 
@@ -32,8 +36,11 @@ router.beforeEach(async (to) => {
   if (!user) {
     return { name: 'login', query: { redirect: to.fullPath } } // 登录后跳回原目标页
   }
-  // 审核中心仅超级管理员可进，普通用户访问时回落到列表页
-  if (to.name === 'audit' && user.role !== 'admin') {
+  // 审核中心：超管或独立审核员可进；站点管理：仅超管
+  if (to.name === 'audit' && !['admin', 'reviewer'].includes(user.role)) {
+    return { name: 'list' }
+  }
+  if (to.name === 'admin' && user.role !== 'admin') {
     return { name: 'list' }
   }
 })

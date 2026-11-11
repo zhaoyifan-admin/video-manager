@@ -5,13 +5,16 @@ defineProps({
   video: { type: Object, required: true },
   // 编辑/删除/公开设置权限：本人视频或超级管理员
   manageable: { type: Boolean, default: false },
-  // 审核权限：仅超级管理员
-  canAudit: { type: Boolean, default: false },
   // 非本人视频（公开共享）时显示归属者
   showOwner: { type: Boolean, default: false },
+  // 是否显示「审核记录」入口（我的提交页开启）
+  showAuditLog: { type: Boolean, default: false },
+  // 列表页批量管理模式：显示复选框，点击卡片变为选中而非播放
+  selectable: { type: Boolean, default: false },
+  selected: { type: Boolean, default: false },
 })
 
-defineEmits(['play', 'edit', 'remove', 'toggle-fav', 'toggle-public', 'audit'])
+defineEmits(['play', 'edit', 'remove', 'toggle-fav', 'toggle-public', 'audit-log', 'select'])
 
 const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
 </script>
@@ -20,9 +23,13 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   <div
     v-lazy-cover="video"
     class="video-card-inner"
-    :class="`cover-tone-${video.id % 6}`"
-    @click="$emit('play', video)"
+    :class="[`cover-tone-${video.id % 6}`, { 'is-selected': selectable && selected }]"
+    @click="selectable ? $emit('select', video) : $emit('play', video)"
   >
+    <!-- 批量管理模式：右上角复选框 -->
+    <label v-if="selectable" class="card-check" @click.stop>
+      <input type="checkbox" :checked="selected" @change="$emit('select', video)" />
+    </label>
     <!-- 视频背景卡片：视频铺满整卡，内容叠加展示 -->
     <video
       v-if="video.filePath"
@@ -43,6 +50,13 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
       <span v-if="video.isPublic" class="cover-public" title="公开视频，所有用户可观看">公开</span>
       <span v-if="video.auditStatus === 0" class="cover-audit pending" title="等待管理员审核">待审核</span>
       <span v-else-if="video.auditStatus === 2" class="cover-audit rejected" title="管理员已驳回，仅自己可见">已驳回</span>
+    </div>
+
+    <!-- 驳回红条：常显告知上传用户未通过及理由（hover 时让位给详情浮层） -->
+    <div v-if="video.auditStatus === 2" class="reject-banner">
+      <span class="reject-banner-label">审核未通过</span>
+      <span class="reject-banner-reason">{{ video.auditReason || '管理员未填写理由' }}</span>
+      <span class="reject-banner-tip">修改后保存即可重新提交审核</span>
     </div>
     <button
       class="cover-fav"
@@ -86,6 +100,11 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
     <!-- 悬停态：详情浮层 -->
     <div class="card-detail">
       <div class="detail-title" :title="video.title">{{ video.title }}</div>
+      <div v-if="video.auditStatus === 2" class="detail-reason">
+        <span class="detail-label">未通过理由</span>
+        <span class="detail-reason-text">{{ video.auditReason || '管理员未填写理由' }}</span>
+        <span class="detail-reason-tip">修改并保存后会重新提交审核</span>
+      </div>
       <div v-if="video.typeName" class="detail-row">
         <span class="detail-label">类型</span>
         <span class="detail-value">{{ video.typeName }}</span>
@@ -126,10 +145,7 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
       <div class="detail-footer">
         <span class="bar-muted">{{ video.updatedAt }}</span>
         <div class="detail-ops">
-          <template v-if="canAudit && video.auditStatus === 0">
-            <button class="nf-btn sm ghost pass" @click.stop="$emit('audit', video, 1)">通过</button>
-            <button class="nf-btn sm ghost danger" @click.stop="$emit('audit', video, 2)">驳回</button>
-          </template>
+          <button v-if="showAuditLog" class="nf-btn sm ghost" @click.stop="$emit('audit-log', video)">审核记录</button>
           <button v-if="manageable" class="nf-btn sm ghost" @click.stop="$emit('toggle-public', video)">
             {{ video.isPublic ? '设为私有' : '设为公开' }}
           </button>
@@ -142,6 +158,106 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
 </template>
 
 <style scoped>
+/* ===== 驳回红条 / 详情浮层中的理由 ===== */
+.reject-banner {
+  position: absolute;
+  top: 42px;
+  left: 10px;
+  right: 10px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-left: 3px solid #ff525b;
+  border-radius: 4px;
+  background: rgba(112, 14, 20, 0.92);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  color: #fff;
+  transition: opacity 0.2s ease;
+}
+
+.video-card-inner:hover .reject-banner {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.reject-banner-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #ffd0d2;
+}
+
+.reject-banner-reason {
+  font-size: 12px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+}
+
+.reject-banner-tip,
+.detail-reason-tip {
+  font-size: 11px;
+  color: #ffb3b8;
+}
+
+.detail-reason {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-left: 3px solid #ff525b;
+  border-radius: 4px;
+  background: rgba(112, 14, 20, 0.35);
+}
+
+.detail-reason .detail-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #ffd0d2;
+}
+
+.detail-reason-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #fff;
+  word-break: break-all;
+}
+
+/* 批量选择 */
+.card-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+}
+
+.card-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--nf-red);
+  cursor: pointer;
+}
+
+.video-card-inner.is-selected {
+  outline: 2px solid var(--nf-red);
+  outline-offset: -2px;
+}
+
 /* ===== 视频背景卡片 ===== */
 .video-card-inner {
   position: relative;

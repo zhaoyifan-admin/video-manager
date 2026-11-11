@@ -5,8 +5,13 @@ from config import DB_CONFIG
 
 
 def get_conn():
-    """获取一个新的数据库连接（DictCursor，查询结果以 dict 返回）"""
-    return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
+    """获取一个新的数据库连接（DictCursor，查询结果以 dict 返回）
+
+    调大 group_concat_max_len，避免标签较多时 GROUP_CONCAT 被默认的 1024 字节静默截断。"""
+    conn = pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
+    with conn.cursor() as cur:
+        cur.execute("SET SESSION group_concat_max_len = 65535")
+    return conn
 
 
 def query(sql, args=None, one=False):

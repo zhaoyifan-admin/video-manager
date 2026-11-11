@@ -54,15 +54,42 @@
       </div>
 
       <div v-else class="player-wrap">
+        <!-- 播放失败：优先解释编码不兼容（MKV / HEVC 等浏览器无法原生解码） -->
+        <div v-if="playError" class="compat-panel">
+          <div class="compat-icon">⚠</div>
+          <div class="compat-title">浏览器无法直接播放该视频</div>
+          <div v-if="mediaInfo?.available && !mediaInfo.compatible" class="compat-detail">
+            容器 <b>{{ mediaInfo.container }}</b> · 视频编码 <b>{{ mediaInfo.videoCodecs.join(' / ') || '未知' }}</b>
+            · 音频编码 <b>{{ mediaInfo.audioCodecs.join(' / ') || '未知' }}</b>。<br />
+            浏览器原生仅支持 H.264 / VP8 / VP9 / AV1 视频与 AAC / MP3 / Opus 音频，
+            建议先转码为 MP4（H.264 + AAC）后重新入库。
+          </div>
+          <div v-else class="compat-detail">
+            请确认源文件存在、外接硬盘已挂载，且文件路径在允许的媒体目录内；也可在「站点管理 → 存储体检」中检查。
+          </div>
+          <button class="nf-btn red" @click="goBack">返回列表</button>
+        </div>
         <video
-          v-if="videoSrc"
+          v-else-if="videoSrc"
+          ref="playerEl"
           :key="videoSrc"
           :src="videoSrc"
           :autoplay="autoPlay"
           controls
           class="page-player"
+          @loadedmetadata="onMeta"
+          @timeupdate="onTimeUpdate"
+          @ended="onEnded"
+          @error="onVideoError"
         >
-          当前浏览器不支持该视频格式（推荐 MP4 / WebM），可尝试改用转换后的格式。
+          <track
+            v-if="video.subtitlePath"
+            :src="`/api/videos/${video.id}/subtitle`"
+            kind="subtitles"
+            srclang="zh"
+            label="字幕"
+            default
+          />
         </video>
         <div v-else class="empty-player">该视频未配置有效的文件路径</div>
       </div>
@@ -79,16 +106,22 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from './ui/toast'
-import { getVideo, toggleFavorite } from './api'
+import {
+  getVideo, toggleFavorite, recordView, getProgress, saveProgress, getMediaInfo,
+} from './api'
 
 const route = useRoute()
 const router = useRouter()
 
 const video = ref(null)
 const error = ref('')
+const playError = ref(false)
+const mediaInfo = ref(null)
+const playerEl = ref(null)
+let lastReport = 0
 
 // 到达播放页即视为「立即播放」，进入后自动开始
 const autoPlay = true
@@ -114,6 +147,8 @@ const openLink = () => {
 
 const load = async () => {
   error.value = ''
+  playError.value = false
+  mediaInfo.value = null
   video.value = null
   try {
     video.value = await getVideo(route.params.id)
@@ -122,6 +157,62 @@ const load = async () => {
     error.value = e.message
   }
 }
+
+// ================= 续播 / 进度上报 =================
+const clock = (s) => {
+  const t = Math.max(0, Math.floor(Number(s) || 0))
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
+}
+
+const onMeta = async (e) => {
+  const el = e.target
+  if (!video.value || !el.duration) return
+  try {
+    const p = await getProgress(video.value.id)
+    if (p.position > 0 && p.position < el.duration - 2) {
+      el.currentTime = p.position
+      showToast(`已从 ${clock(p.position)} 继续播放`)
+    }
+  } catch {
+    // 进度读取失败不影响播放
+  }
+}
+
+const report = (position, duration) => {
+  if (!video.value) return
+  saveProgress(video.value.id, position, duration).catch(() => {})
+}
+
+const onTimeUpdate = (e) => {
+  const now = Date.now()
+  if (now - lastReport < 10000) return // 每 10 秒上报一次，避免频繁写库
+  lastReport = now
+  report(e.target.currentTime, e.target.duration)
+}
+
+const onEnded = (e) => report(e.target.duration, e.target.duration)
+
+const onVideoError = async () => {
+  playError.value = true
+  if (!video.value) return
+  try {
+    mediaInfo.value = await getMediaInfo(video.value.id)
+  } catch {
+    // 探测失败也能给出通用提示
+  }
+}
+
+// 离开页面时用 keepalive 补报最后一次进度，避免最后 10 秒丢失
+onBeforeUnmount(() => {
+  const el = playerEl.value
+  if (!el || !video.value || !el.duration) return
+  fetch(`/api/videos/${video.value.id}/progress`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ position: el.currentTime, duration: el.duration }),
+    keepalive: true,
+  }).catch(() => {})
+})
 
 const goBack = () => {
   if (window.history.length > 1) router.back()
@@ -138,7 +229,17 @@ const toggleFav = async () => {
   }
 }
 
-onMounted(load)
+// 打开播放页即视为一次播放：上报点击量（统计失败不影响播放）
+onMounted(async () => {
+  await load()
+  if (video.value) {
+    try {
+      await recordView(video.value.id)
+    } catch {
+      // 热度统计属于旁路，不打断视频加载
+    }
+  }
+})
 </script>
 
 <style scoped>
@@ -262,6 +363,38 @@ onMounted(load)
   height: 320px;
   color: var(--nf-text-muted);
   font-size: 14px;
+}
+
+/* 编码不兼容说明 */
+.compat-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 320px;
+  padding: 56px 32px;
+  text-align: center;
+}
+
+.compat-icon {
+  font-size: 36px;
+}
+
+.compat-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f5f5f5;
+}
+
+.compat-detail {
+  max-width: 720px;
+  font-size: 13.5px;
+  line-height: 1.9;
+  color: #b3b3b3;
+}
+
+.compat-detail b {
+  color: #e5e5e5;
 }
 
 .meta-panel {

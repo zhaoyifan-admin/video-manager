@@ -1,4 +1,5 @@
 """缩略图生成：ffmpeg 抽帧 + 同视频并发锁 + 缓存清理"""
+import concurrent.futures
 import os
 import subprocess
 import threading
@@ -80,3 +81,27 @@ def ensure_generated(video_id, path):
         if not os.path.isfile(thumb):  # 拿到锁后二次确认，前一个请求可能已生成
             generate_thumbnail(video_id, path)
     return thumb if os.path.isfile(thumb) else None
+
+
+# ---------- 后台异步生成 ----------
+# 最多 2 个 ffmpeg 同时运行，避免首屏 10 张卡片同时起进程拖垮本机
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="thumb")
+_pending = set()
+_pending_guard = threading.Lock()
+
+
+def schedule_generation(video_id, path):
+    """提交一次后台生成任务；同一视频已有任务排队时直接跳过"""
+    with _pending_guard:
+        if video_id in _pending:
+            return
+        _pending.add(video_id)
+
+    def _run():
+        try:
+            ensure_generated(video_id, path)
+        finally:
+            with _pending_guard:
+                _pending.discard(video_id)
+
+    _executor.submit(_run)

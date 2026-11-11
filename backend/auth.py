@@ -45,10 +45,15 @@ def is_super_admin(user):
     return bool(user) and user.get("role") == "admin"
 
 
+def can_audit(user):
+    """是否有审核权：超管 admin 与独立审核员 reviewer（reviewer 不拥有数据管理权）"""
+    return bool(user) and user.get("role") in ("admin", "reviewer")
+
+
 def visible_sql(user):
-    """「可观看」SQL 条件片段：本人视频 OR 已通过审核的公开视频 OR 超管可见全部。
+    """「可观看」SQL 条件片段：本人视频 OR 已通过审核的公开视频；超管/审核员可见全部。
     列名不带表前缀（videos 是唯一含 user_id / is_public / audit_status 列的表，多表关联查询中同样无歧义）"""
-    if is_super_admin(user):
+    if is_super_admin(user) or can_audit(user):
         return "TRUE", []
     return "(user_id = %s OR (is_public = 1 AND audit_status = 1))", [user["id"]]
 
@@ -61,12 +66,24 @@ def manageable_sql(user):
 
 
 def require_admin(fn):
-    """视图装饰器：仅超级管理员可访问（普通用户返回 403），需在 require_login 之后使用"""
+    """视图装饰器：仅超级管理员可访问（普通用户/审核员返回 403），需在 require_login 之后使用"""
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not is_super_admin(g.user):
             return jsonify({"code": 1, "msg": "需要管理员权限"}), 403
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def require_auditor(fn):
+    """视图装饰器：超管或独立审核员可执行审核动作，需在 require_login 之后使用"""
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not can_audit(g.user):
+            return jsonify({"code": 1, "msg": "需要审核权限"}), 403
         return fn(*args, **kwargs)
 
     return wrapper
