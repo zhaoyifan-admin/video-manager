@@ -30,35 +30,66 @@ const goAdmin = () => router.push({ name: 'admin' })
 
 // 我的提交 / 审核结果：查看自己待审与被驳回的视频及理由
 const goSubmissions = () => router.push({ name: 'mySubmissions' })
+
+// ===== 分类项工具类（完整类名写在源码里保证 Tailwind 扫描到） =====
+const catBase =
+  'shrink-0 relative px-3.5 py-[7px] rounded text-[13.5px] font-medium cursor-pointer select-none ' +
+  'transition-colors hover:text-white hover:bg-white/5'
+// 选中态：白色加粗 + 底部红色指示条（after 变体）
+const underline =
+  'after:absolute after:left-3.5 after:right-3.5 after:bottom-0.5 after:h-[2px] after:rounded ' +
+  'after:bg-nf-red after:content-[\'\']'
+const catClass = (active, fav) => {
+  let cls = catBase + (fav ? ' text-[#e08a90]' : ' text-nf-sub')
+  if (active) cls += ' font-bold ' + underline + (fav ? ' text-nf-red' : ' text-white')
+  return cls
+}
+
+// 角标共用工具类
+const badge = (color) =>
+  `min-w-[17px] h-[17px] px-[5px] rounded-full text-white text-[11px] font-bold leading-[17px] text-center tabular-nums ${color}`
 </script>
 
 <template>
   <!-- ===== 顶部导航：品牌 + 分类导航 + 搜索 + 操作（netflixgc 风格） ===== -->
-  <header class="site-nav">
-    <div class="nav-left">
-      <img class="nav-logo" :src="brandLogo" alt="影库" />
-      <span class="nav-brand">影库</span>
-      <span class="nav-sub">VIDEO&nbsp;FACTORY</span>
+  <header
+    class="sticky top-0 z-[100] flex items-center gap-5 px-10 py-3 bg-gradient-to-b from-black/95 to-nf-page/85 backdrop-blur-[10px] border-b border-white/10 max-[900px]:flex-wrap max-[900px]:gap-2.5 max-[900px]:px-5 max-[900px]:py-2.5"
+  >
+    <div class="flex items-center gap-2.5 shrink-0">
+      <img
+        class="w-[30px] h-[30px] rounded-lg shrink-0 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
+        :src="brandLogo"
+        alt="影库"
+      />
+      <span
+        class="text-[26px] font-extrabold tracking-[4px] text-nf-red select-none [text-shadow:0_0_18px_rgba(229,9,20,0.45)]"
+      >
+        影库
+      </span>
+      <span class="text-[10px] font-semibold tracking-[4px] text-nf-muted select-none">
+        VIDEO&nbsp;FACTORY
+      </span>
     </div>
 
-    <nav class="nav-cats">
-      <a class="nav-cat" :class="{ active: activeTypeId === 0 && !favActive }" @click="emit('select-type', 0)">首页</a>
+    <nav
+      class="flex-1 min-w-0 flex items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      <a :class="catClass(activeTypeId === 0 && !favActive, false)" @click="emit('select-type', 0)">首页</a>
       <a
         v-for="t in types"
         :key="t.id"
-        class="nav-cat"
-        :class="{ active: activeTypeId === t.id && !favActive }"
+        :class="catClass(activeTypeId === t.id && !favActive, false)"
         @click="emit('select-type', t.id)"
       >
         {{ t.name }}
       </a>
-      <a class="nav-cat fav" :class="{ active: favActive }" @click="emit('toggle-fav')">
-        ♥ 我的收藏
-      </a>
+      <a :class="catClass(favActive, true)" @click="emit('toggle-fav')">♥ 我的收藏</a>
     </nav>
 
-    <div class="nav-right">
-      <div class="nav-search">
+    <div class="flex items-center gap-2 shrink-0 max-[900px]:flex-wrap">
+      <div
+        class="flex items-center gap-[7px] w-[218px] h-[34px] px-[11px] border border-nf-line rounded bg-nf-elevated text-[#8a8a92] transition-colors focus-within:border-[rgba(229,9,20,0.75)]"
+      >
         <svg viewBox="0 0 24 24" width="14" height="14">
           <path
             d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"
@@ -67,294 +98,55 @@ const goSubmissions = () => router.push({ name: 'mySubmissions' })
         </svg>
         <input
           v-model="keyword"
-          class="search-input"
+          class="flex-1 min-w-0 border-none outline-none bg-transparent text-nf-text text-[13px] font-[inherit] placeholder:text-nf-line-hover"
           placeholder="搜索标题 / 路径 / 备注"
           @keyup.enter="onSearch"
         />
       </div>
-      <button v-if="canAudit" class="nf-btn text audit-entry" @click="goAudit">
+      <button
+        v-if="canAudit"
+        class="nf-btn text text-[#ffb3b8] hover:text-white"
+        @click="goAudit"
+      >
         审核中心
-        <span v-if="pendingCount > 0" class="audit-badge">{{ pendingCount > 99 ? '99+' : pendingCount }}</span>
+        <span v-if="pendingCount > 0" :class="badge('bg-nf-red')">
+          {{ pendingCount > 99 ? '99+' : pendingCount }}
+        </span>
       </button>
-      <button v-if="isAdmin" class="nf-btn text audit-entry" @click="goAdmin">站点管理</button>
-      <button class="nf-btn text notice-entry" @click="goSubmissions" title="查看我上传视频的审核结果">
+      <button v-if="isAdmin" class="nf-btn text" @click="goAdmin">站点管理</button>
+      <button
+        class="nf-btn text text-[#ffb3b8] hover:text-white"
+        title="查看我上传视频的审核结果"
+        @click="goSubmissions"
+      >
         审核结果
-        <span v-if="noticeCount > 0" class="notice-badge">{{ noticeCount > 99 ? '99+' : noticeCount }}</span>
+        <span v-if="noticeCount > 0" :class="badge('bg-[#b8141c]')">
+          {{ noticeCount > 99 ? '99+' : noticeCount }}
+        </span>
       </button>
       <button class="nf-btn text" @click="emit('manage')">管理</button>
       <button class="nf-btn ghost" @click="emit('batch')">批量导入</button>
       <button class="nf-btn red" @click="emit('create')">＋ 新增视频</button>
-      <div class="nav-user">
-        <span class="user-avatar">{{ username.slice(0, 1).toUpperCase() }}</span>
-        <span class="user-name" :title="username">{{ username }}</span>
-        <button class="logout-btn" title="退出登录" @click="emit('logout')">退出</button>
+      <div class="flex items-center gap-2 py-1 pr-1.5 pl-1 rounded-[20px] bg-white/5">
+        <span
+          class="w-[26px] h-[26px] rounded-full bg-nf-red text-white text-xs font-bold flex items-center justify-center select-none"
+        >
+          {{ username.slice(0, 1).toUpperCase() }}
+        </span>
+        <span
+          class="max-w-[90px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold text-[#e5e5e5]"
+          :title="username"
+        >
+          {{ username }}
+        </span>
+        <button
+          class="border-none bg-transparent text-nf-muted text-xs cursor-pointer px-1 py-0.5 rounded transition-colors hover:bg-[rgba(229,9,20,0.75)] hover:text-white"
+          title="退出登录"
+          @click="emit('logout')"
+        >
+          退出
+        </button>
       </div>
     </div>
   </header>
 </template>
-
-<style scoped>
-/* ===== 顶部导航 ===== */
-.site-nav {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 12px 40px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.95), rgba(11, 11, 13, 0.85));
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.nav-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.nav-logo {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-.nav-brand {
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: 4px;
-  color: var(--nf-red);
-  text-shadow: 0 0 18px rgba(229, 9, 20, 0.45);
-  user-select: none;
-}
-
-.nav-sub {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 4px;
-  color: var(--nf-text-muted);
-  user-select: none;
-}
-
-/* 分类导航 */
-.nav-cats {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.nav-cats::-webkit-scrollbar {
-  display: none;
-}
-
-.nav-cat {
-  flex-shrink: 0;
-  padding: 7px 14px;
-  border-radius: 5px;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--nf-text-secondary);
-  cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
-  user-select: none;
-}
-
-.nav-cat:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.nav-cat.active {
-  color: #fff;
-  font-weight: 700;
-  position: relative;
-}
-
-.nav-cat.active::after {
-  content: '';
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 1px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--nf-red);
-}
-
-.nav-cat.fav {
-  color: #e08a90;
-}
-
-.nav-cat.fav.active {
-  color: var(--nf-red);
-}
-
-.nav-cat.fav.active::after {
-  background: var(--nf-red);
-}
-
-.nav-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-/* 搜索框 */
-.nav-search {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 218px;
-  padding: 0 11px;
-  height: 34px;
-  border: 1px solid #333338;
-  border-radius: 5px;
-  background: #1f1f23;
-  color: #8a8a92;
-  transition: border-color 0.18s ease;
-}
-
-.nav-search:focus-within {
-  border-color: rgba(229, 9, 20, 0.75);
-}
-
-.search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: #f5f5f5;
-  font-size: 13px;
-  font-family: inherit;
-}
-
-.search-input::placeholder {
-  color: #5c5c63;
-}
-
-/* 审核中心入口：红色文字 + 待审数量角标 */
-.audit-entry {
-  position: relative;
-  color: #ffb3b8;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.audit-entry:hover {
-  color: #fff;
-}
-
-.audit-badge {
-  min-width: 17px;
-  height: 17px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--nf-red);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 17px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 审核结果入口：本人被驳回数量角标 */
-.notice-entry {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #ffb3b8;
-}
-
-.notice-entry:hover {
-  color: #fff;
-}
-
-.notice-badge {
-  min-width: 17px;
-  height: 17px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: #b8141c;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 17px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 用户区：头像 + 用户名 + 退出 */
-.nav-user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px 4px 4px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.user-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--nf-red);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  user-select: none;
-}
-
-.user-name {
-  max-width: 90px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-  color: #e5e5e5;
-}
-
-.logout-btn {
-  border: none;
-  background: transparent;
-  color: var(--nf-text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-}
-
-.logout-btn:hover {
-  color: #fff;
-  background: rgba(229, 9, 20, 0.75);
-}
-
-/* 响应式：小屏收紧间距 */
-@media (max-width: 900px) {
-  .site-nav {
-    flex-wrap: wrap;
-    padding: 10px 20px;
-    gap: 10px;
-  }
-
-  .nav-right {
-    flex-wrap: wrap;
-  }
-}
-</style>

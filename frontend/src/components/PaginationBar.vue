@@ -30,100 +30,42 @@ const pageItems = computed(() => {
 const onSizeChange = (e) => {
   emit('size-change', Number(e.target.value))
 }
+
+// 页码按钮的工具类：基础态 + 当前页高亮态（Netflix 红实底）
+const btnBase =
+  'min-w-8 h-8 px-2 border rounded-[5px] text-[13px] cursor-pointer transition-colors ' +
+  'enabled:hover:border-nf-line-hover enabled:hover:text-white disabled:opacity-35 disabled:cursor-not-allowed ' +
+  'border-nf-line bg-nf-elevated text-nf-sub'
+const btnOn = 'bg-nf-red border-nf-red text-white font-bold'
+const btnClass = (p) => (p === props.page ? btnOn : btnBase)
 </script>
 
 <template>
-  <!-- 分页（手写） -->
-  <div v-if="total > 0" class="pagination">
-    <span class="page-total">共 {{ total }} 条</span>
-    <select class="nf-select page-size" :value="pageSize" @change="onSizeChange">
+  <!-- 分页（Tailwind 工具类） -->
+  <div v-if="total > 0" class="flex items-center justify-end gap-3.5 mt-[26px]">
+    <span class="text-[13px] text-nf-muted">共 {{ total }} 条</span>
+    <select
+      class="nf-select w-[104px] h-8 py-0 pl-2.5 pr-[26px] text-[12.5px]"
+      :value="pageSize"
+      @change="onSizeChange"
+    >
       <option :value="12">12 条/页</option>
       <option :value="24">24 条/页</option>
       <option :value="48">48 条/页</option>
     </select>
-    <div class="page-nums">
-      <button class="page-btn" :disabled="page <= 1" @click="emit('go-page', page - 1)">
+    <div class="flex items-center gap-[5px]">
+      <button :class="btnBase" :disabled="page <= 1" @click="emit('go-page', page - 1)">
         ‹
       </button>
       <template v-for="(p, i) in pageItems" :key="`${p}-${i}`">
-        <span v-if="p === '…'" class="page-ellipsis">…</span>
-        <button
-          v-else
-          class="page-btn"
-          :class="{ active: p === page }"
-          @click="emit('go-page', p)"
-        >
+        <span v-if="p === '…'" class="text-nf-line-hover px-0.5 select-none">…</span>
+        <button v-else :class="btnClass(p)" @click="emit('go-page', p)">
           {{ p }}
         </button>
       </template>
-      <button class="page-btn" :disabled="page >= totalPages" @click="emit('go-page', page + 1)">
+      <button :class="btnBase" :disabled="page >= totalPages" @click="emit('go-page', page + 1)">
         ›
       </button>
     </div>
   </div>
 </template>
-
-<style scoped>
-/* ===== 分页 ===== */
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-  margin-top: 26px;
-}
-
-.page-total {
-  font-size: 13px;
-  color: var(--nf-text-muted);
-}
-
-.page-size {
-  width: 104px;
-  height: 32px;
-  padding: 0 26px 0 10px;
-  font-size: 12.5px;
-}
-
-.page-nums {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.page-btn {
-  min-width: 32px;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid #333338;
-  border-radius: 5px;
-  background: #1f1f23;
-  color: #b3b3b3;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.page-btn:hover:not(:disabled) {
-  border-color: #5c5c63;
-  color: #fff;
-}
-
-.page-btn.active {
-  background: var(--nf-red);
-  border-color: var(--nf-red);
-  color: #fff;
-  font-weight: 700;
-}
-
-.page-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.page-ellipsis {
-  color: #5c5c63;
-  padding: 0 2px;
-  user-select: none;
-}
-</style>

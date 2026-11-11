@@ -1,5 +1,28 @@
-/* ===== NetflixGC 风格全局主题（无 UI 框架，纯手写） =====
-   沉浸式深色 + Netflix 红主色调 */
+/* ===== NetflixGC 风格全局主题 =====
+   Tailwind v4：仅引入 theme（设计 token）与 utilities（工具类），
+   不引入 preflight 基础重置，避免破坏既有手写组件样式。
+   @theme 中的 token 会自动生成 bg-nf-* / text-nf-* 等工具类。 */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme {
+  /* Netflix 暗红主题色板（与 :root 变量保持同值） */
+  --color-nf-red: #e50914;
+  --color-nf-red-hover: #f6121d;
+  --color-nf-page: #0b0b0d;
+  --color-nf-card: #181818;
+  --color-nf-elevated: #1f1f23;
+  --color-nf-border: #26262b;
+  --color-nf-line: #333338;
+  --color-nf-line-hover: #5c5c63;
+  --color-nf-text: #f5f5f5;
+  --color-nf-sub: #b3b3b3;
+  --color-nf-muted: #757575;
+  --color-nf-green: #46d369;
+  --color-nf-amber: #e6a01e;
+}
 
 :root {
   --nf-red: #e50914;
@@ -53,7 +76,8 @@ button {
   background: #4d4d4d;
 }
 
-/* ===== 手写按钮体系 ===== */
+/* ===== 手写组件类（components 层：可被 utilities 工具类覆盖微调） ===== */
+@layer components {
 .nf-btn {
   display: inline-flex;
   align-items: center;
@@ -244,3 +268,4 @@ button {
     transform: rotate(360deg);
   }
 }
+} /* end @layer components */
