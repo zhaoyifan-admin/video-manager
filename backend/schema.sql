@@ -8,11 +8,28 @@ CREATE DATABASE IF NOT EXISTS video_manager
 USE video_manager;
 
 -- 标签表：一个标签可挂到多个视频（多对多）
+-- 标签由管理员统一增删改并发布；普通用户只能选用已发布的标签
 CREATE TABLE IF NOT EXISTS tags (
-  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
-  name       VARCHAR(50) NOT NULL UNIQUE COMMENT '标签名称',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='标签表：一个标签可挂到多个视频（多对多）';
+  id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
+  name         VARCHAR(50) NOT NULL UNIQUE COMMENT '标签名称',
+  is_published TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否发布：0 未发布（普通用户不可见） 1 已发布',
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='标签表：一个标签可挂到多个视频（多对多），管理员增删改并发布';
+
+-- 存量库升级：补齐 is_published 列（幂等）
+-- 通过 ALTER 补列时用 DEFAULT 1，让补列瞬间存在的旧标签一次性全部置为已发布（不影响正常运行后的发布/下架操作）
+SET @col_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'tags' AND column_name = 'is_published'
+);
+SET @ddl = IF(
+  @col_exists = 0,
+  'ALTER TABLE tags ADD COLUMN is_published TINYINT(1) NOT NULL DEFAULT 1 COMMENT ''是否发布：0 未发布（普通用户不可见） 1 已发布'' AFTER name',
+  'SELECT ''tags.is_published 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 影视类型表：单选分类（如 电影 / 电视剧 / 动漫）
 CREATE TABLE IF NOT EXISTS types (
@@ -25,12 +42,13 @@ CREATE TABLE IF NOT EXISTS types (
 INSERT IGNORE INTO types (name) VALUES
   ('电影'), ('电视剧'), ('动漫'), ('纪录片'), ('综艺');
 
--- 用户表：登录账号，密码存哈希（pbkdf2）；role：user 普通用户 / admin 超级管理员
+-- 用户表：登录账号，密码存哈希（pbkdf2）
+-- role 层级：user 普通用户(1) / reviewer 审核员(2) / manager 管理员(2) / admin 超级管理员(3)
 CREATE TABLE IF NOT EXISTS users (
   id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
   username      VARCHAR(50) NOT NULL UNIQUE COMMENT '登录用户名',
   password_hash VARCHAR(255) NOT NULL COMMENT '密码哈希（pbkdf2）',
-  role          VARCHAR(20) NOT NULL DEFAULT 'user' COMMENT '角色：user 普通用户 / admin 超级管理员',
+  role          VARCHAR(20) NOT NULL DEFAULT 'user' COMMENT '角色：user 普通用户 / reviewer 审核员 / manager 管理员 / admin 超级管理员',
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '注册时间'
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='用户表：登录账号，密码存哈希（pbkdf2）';
 

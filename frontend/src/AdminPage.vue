@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import {
   getAdminOverview, listUsers, setUserRole, createUser, getIntegrity, relocateVideos,
   listCollections, createCollection, deleteCollection,
+  listTags, createTag, updateTag, deleteTag,
 } from './api'
 import { showToast } from './ui/toast'
 import { confirmAction } from './ui/confirm'
@@ -17,6 +18,7 @@ const TABS = [
   { key: 'users', label: '用户与角色' },
   { key: 'storage', label: '存储体检' },
   { key: 'collections', label: '合集管理' },
+  { key: 'tags', label: '标签管理' },
 ]
 
 const loading = ref(false)
@@ -24,6 +26,7 @@ const overview = ref(null)
 const users = ref([])
 const integrity = ref(null)
 const collections = ref([])
+const tags = ref([])
 
 const loadOverview = async () => {
   try { overview.value = await getAdminOverview() } catch (e) { showToast.error(e.message) }
@@ -37,6 +40,9 @@ const loadIntegrity = async () => {
 const loadCollections = async () => {
   try { collections.value = (await listCollections()).items } catch (e) { showToast.error(e.message) }
 }
+const loadTags = async () => {
+  try { tags.value = await listTags() } catch (e) { showToast.error(e.message) }
+}
 
 const loadTab = async (key) => {
   tab.value = key
@@ -45,6 +51,7 @@ const loadTab = async (key) => {
     if (key === 'overview') await loadOverview()
     else if (key === 'users') await loadUsers()
     else if (key === 'storage') await loadIntegrity()
+    else if (key === 'tags') await loadTags()
     else await loadCollections()
   } finally {
     loading.value = false
@@ -54,7 +61,7 @@ const loadTab = async (key) => {
 onMounted(() => loadTab('overview'))
 
 // ---------- 角色 ----------
-const ROLE_TEXT = { user: '普通用户', reviewer: '审核员', admin: '超级管理员' }
+const ROLE_TEXT = { user: '普通用户', reviewer: '审核员', manager: '管理员', admin: '超级管理员' }
 const newUser = reactive({ username: '', password: '', role: 'user' })
 const addUser = async () => {
   if (!newUser.username.trim() || !newUser.password) {
@@ -134,6 +141,68 @@ const removeCollection = async (row) => {
     showToast.error(e.message)
   }
 }
+
+// ---------- 标签管理：仅超管可增删改并发布，普通用户只能选用已发布标签 ----------
+const newTag = ref('')
+const addTag = async () => {
+  if (!newTag.value.trim()) {
+    showToast.warning('请输入标签名')
+    return
+  }
+  try {
+    await createTag(newTag.value.trim())
+    showToast(`标签「${newTag.value.trim()}」已创建（未发布），发布后普通用户可见`)
+    newTag.value = ''
+    await loadTags()
+  } catch (e) {
+    showToast.error(e.message)
+  }
+}
+
+const toggleTagPublish = async (row) => {
+  try {
+    await updateTag(row.id, { isPublished: !row.isPublished })
+    showToast(row.isPublished ? `「${row.name}」已下架，普通用户不再可选` : `「${row.name}」已发布`)
+    await loadTags()
+  } catch (e) {
+    showToast.error(e.message)
+  }
+}
+
+const editingTagId = ref(null) // 当前正在改名的标签 id
+const editingTagName = ref('')
+const startRenameTag = (row) => {
+  editingTagId.value = row.id
+  editingTagName.value = row.name
+}
+const confirmRenameTag = async () => {
+  const name = editingTagName.value.trim()
+  if (!name) return
+  try {
+    await updateTag(editingTagId.value, { name })
+    showToast('标签已改名')
+    editingTagId.value = null
+    await loadTags()
+  } catch (e) {
+    showToast.error(e.message)
+  }
+}
+const cancelRenameTag = () => { editingTagId.value = null }
+
+const removeTag = async (row) => {
+  const ok = await confirmAction({
+    title: '删除标签',
+    message: `确认删除标签「${row.name}」？影片与该标签的关联将一并解除，影片本身不受影响。`,
+  })
+  if (!ok) return
+  try {
+    await deleteTag(row.id)
+    showToast('已删除')
+    await loadTags()
+  } catch (e) {
+    showToast.error(e.message)
+  }
+}
 </script>
 
 <template>
@@ -191,12 +260,13 @@ const removeCollection = async (row) => {
 
     <!-- 用户与角色 -->
     <section v-else-if="tab === 'users'" class="admin-section">
-      <p class="block-hint">审核员（reviewer）可以进入审核中心审核他人视频，但不能删除或编辑他人内容；超级管理员拥有全部权限。关闭注册（config.py 的 REGISTRATION_ENABLED = False）后，可在此统一创建账号。</p>
+      <p class="block-hint">角色层级：超级管理员可看/管全部；管理员可看并可审平级及以下用户（管理员、审核员、普通用户）的视频，但不能管理他人内容；审核员可审核全部视频；普通用户只能看自己的视频和已过审的公开视频。关闭注册（config.py 的 REGISTRATION_ENABLED = False）后，可在此统一创建账号。</p>
       <div class="relocate-form">
         <input v-model="newUser.username" class="nf-input" placeholder="新账号用户名" maxlength="50" />
         <input v-model="newUser.password" class="nf-input" type="password" placeholder="初始密码（至少 6 位）" />
         <select v-model="newUser.role" class="admin-select">
           <option value="user">普通用户</option>
+          <option value="manager">管理员</option>
           <option value="reviewer">审核员</option>
           <option value="admin">超级管理员</option>
         </select>
@@ -212,6 +282,7 @@ const removeCollection = async (row) => {
               <td>
                 <select v-model="u.role" class="admin-select" @change="changeRole(u)">
                   <option value="user">普通用户</option>
+                  <option value="manager">管理员</option>
                   <option value="reviewer">审核员</option>
                   <option value="admin">超级管理员</option>
                 </select>
@@ -283,6 +354,55 @@ const removeCollection = async (row) => {
       </div>
       <p class="block-hint">在「新增/编辑视频」表单里可为影片选择所属合集，列表页可按合集筛选。</p>
     </section>
+
+    <!-- 标签管理 -->
+    <section v-else-if="tab === 'tags'" class="admin-section">
+      <p class="block-hint">标签由超级管理员统一创建、发布与删除；普通用户在新增/编辑视频时只能从<b>已发布</b>的标签中选择，无法自行创建。新建标签默认未发布，发布后才会出现在普通用户的可选项里。</p>
+      <div class="relocate-form">
+        <input
+          v-model="newTag"
+          class="nf-input"
+          placeholder="新标签名称（如：科幻 / 高分）"
+          maxlength="50"
+          @keyup.enter="addTag"
+        />
+        <button class="nf-btn red" @click="addTag">＋ 新建标签</button>
+      </div>
+      <div class="table-scroll my-3">
+        <table class="admin-table">
+          <thead><tr><th>标签名</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr v-for="t in tags" :key="t.id">
+              <td>
+                <template v-if="editingTagId === t.id">
+                  <input
+                    v-model="editingTagName"
+                    class="nf-input tag-edit-input"
+                    maxlength="50"
+                    @keyup.enter="confirmRenameTag"
+                    @keyup.esc="cancelRenameTag"
+                  />
+                  <button class="nf-btn sm red" @click="confirmRenameTag">确定</button>
+                  <button class="nf-btn sm ghost" @click="cancelRenameTag">取消</button>
+                </template>
+                <template v-else>{{ t.name }}</template>
+              </td>
+              <td>
+                <span :class="t.isPublished ? 'good' : 'warn-dim'">{{ t.isPublished ? '已发布' : '未发布' }}</span>
+              </td>
+              <td>
+                <button class="nf-btn sm ghost" @click="toggleTagPublish(t)">
+                  {{ t.isPublished ? '下架' : '发布' }}
+                </button>
+                <button class="nf-btn sm ghost" @click="startRenameTag(t)">改名</button>
+                <button class="nf-btn sm ghost danger" @click="removeTag(t)">删除</button>
+              </td>
+            </tr>
+            <tr v-if="!tags.length"><td colspan="3" class="muted">暂无标签</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -317,6 +437,8 @@ const removeCollection = async (row) => {
 .admin-table code { font-size: 12px; color: #b3b3b3; word-break: break-all; }
 .muted { color: var(--nf-text-muted); text-align: center; }
 .good { color: #46d369; } .bad { color: var(--nf-red); }
+.warn-dim { color: #e6a01e; }
+.tag-edit-input { display: inline-block; width: 180px; height: 30px; margin-right: 8px; }
 .admin-select { height: 34px; padding: 0 8px; border: 1px solid #38383f; border-radius: 4px; background: #202025; color: #e5e5e5; font-size: 12.5px; }
 .integrity-summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; color: #d2d2d2; }
 .integrity-summary b { color: #fff; }

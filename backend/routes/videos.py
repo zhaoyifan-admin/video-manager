@@ -10,8 +10,8 @@ import config
 import db
 from audit_logs import add_log, serialize_log
 from auth import (
-    can_audit, is_super_admin, manageable_sql, require_admin, require_auditor,
-    require_login, visible_sql,
+    LOWER_ROLES_SQL, ROLE_LEVELS, can_audit, is_super_admin, manageable_sql,
+    require_admin, require_auditor, require_login, visible_sql,
 )
 from responses import ok, fail
 from storage import (
@@ -161,16 +161,26 @@ def _schedule_thumb(video_id, file_path):
         schedule_generation(video_id, path)
 
 
-def save_video_tags(conn, video_id, tag_names):
-    """重建视频的标签关联：先清空旧关联，再逐个 get_or_create 标签"""
+def save_video_tags(conn, video_id, tag_names, allow_create=False):
+    """重建视频的标签关联：先清空旧关联，再逐个匹配标签。
+
+    标签统一由管理员管理发布：普通用户提交的未知 / 未发布标签静默忽略；
+    allow_create=True（超管）时未知标签直接创建并发布，已存在的不论发布与否都可挂。"""
     with conn.cursor() as cur:
         cur.execute("DELETE FROM video_tags WHERE video_id = %s", (video_id,))
         for name in tag_names:
-            cur.execute("SELECT id FROM tags WHERE name = %s", (name,))
+            if allow_create:
+                cur.execute("SELECT id FROM tags WHERE name = %s", (name,))
+            else:
+                cur.execute(
+                    "SELECT id FROM tags WHERE name = %s AND is_published = 1", (name,)
+                )
             row = cur.fetchone()
             tag_id = row["id"] if row else None
             if tag_id is None:
-                cur.execute("INSERT INTO tags (name) VALUES (%s)", (name,))
+                if not allow_create:
+                    continue  # 不存在的标签由管理员在标签管理中创建，这里静默忽略
+                cur.execute("INSERT INTO tags (name, is_published) VALUES (%s, 1)", (name,))
                 tag_id = cur.lastrowid
             cur.execute(
                 "INSERT IGNORE INTO video_tags (video_id, tag_id) VALUES (%s, %s)",
@@ -199,10 +209,13 @@ def list_videos():
         base_sql, base_args = visible_sql(g.user)
         conditions, args = [base_sql, "v.audit_status = 1"], base_args
     elif scope == "audit":
-        # 审核中心：超管或独立审核员查看所有用户、所有状态
+        # 审核中心：超管/审核员查看所有用户、所有状态；管理员只看平级及以下用户
         if not can_audit(g.user):
             return fail("需要审核权限", 403)
-        conditions, args = ["TRUE"], []
+        if g.user["role"] == "manager":
+            conditions, args = [f"v.user_id IN (SELECT id FROM users WHERE role IN {LOWER_ROLES_SQL})"], []
+        else:
+            conditions, args = ["TRUE"], []
     elif scope == "mine":
         # 我的提交：本人所有状态（含待审/驳回，用于查看驳回理由并重新上传）
         conditions, args = ["v.user_id = %s"], [g.user["id"]]
@@ -325,7 +338,7 @@ def create_video():
                  description, type_id, status, is_public),
             )
             video_id = cur.lastrowid
-        save_video_tags(conn, video_id, tag_names)
+        save_video_tags(conn, video_id, tag_names, allow_create=is_super_admin(g.user))
         # 留痕：管理员上传免审通过（auto_approve），普通用户上传进入待审核（submit）
         if status == 1:
             add_log(conn, video_id, "auto_approve", None, 1, g.user, "管理员上传，无需审核直接通过")
@@ -396,7 +409,7 @@ def update_video(video_id):
                     new_status, new_public, "" if resubmit else row["audit_reason"], video_id,
                 ),
             )
-        save_video_tags(conn, video_id, tag_names)
+        save_video_tags(conn, video_id, tag_names, allow_create=is_super_admin(g.user))
         # 留痕：状态确实发生变化时才记一条，避免「待审核→待审核」的噪声
         if resubmit and row["audit_status"] != 0:
             add_log(
@@ -431,9 +444,11 @@ def delete_video(video_id):
     if result["rowcount"] == 0:
         return fail("视频不存在", 404)
 
-    file_deleted = delete_source_file(row["file_path"])
+    file_deleted, file_missing = delete_source_file(row["file_path"])
     remove_thumb(video_id)  # 同步清理缩略图缓存（存在与否不影响删除结果）
-    return ok({"fileDeleted": file_deleted})
+    # fileDeleted: 文件是否已物理删除；fileMissing: 文件本就不存在（仅清理记录）
+    # 两者皆 False = 文件存在但删不掉（被占用/白名单外），前端会提示用户手动处理
+    return ok({"fileDeleted": file_deleted, "fileMissing": file_missing})
 
 
 @bp.post("/<int:video_id>/favorite")
@@ -540,9 +555,17 @@ def audit_video(video_id):
         if len(reason) > 500:
             return fail("驳回理由过长（最多 500 个字符）")
 
-    row = db.query("SELECT id, audit_status FROM videos WHERE id = %s", (video_id,), one=True)
+    row = db.query(
+        "SELECT v.id, v.audit_status, u.role AS owner_role "
+        "FROM videos v JOIN users u ON u.id = v.user_id WHERE v.id = %s",
+        (video_id,),
+        one=True,
+    )
     if not row:
         return fail("视频不存在", 404)
+    # 管理员（manager）只能审核平级及以下用户的视频，超管的视频仅超管/审核员可审
+    if g.user["role"] == "manager" and ROLE_LEVELS.get(row["owner_role"], 1) > ROLE_LEVELS["manager"]:
+        return fail("管理员只能审核平级及以下用户的视频", 403)
 
     old_status = row["audit_status"]
     conn = db.get_conn()
@@ -662,11 +685,21 @@ def batch_import_videos():
                     str(t).strip()[:50] for t in (item.get("tags") or []) if str(t).strip()
                 ))[:20]
                 for name in tag_names:
-                    cur.execute("SELECT id FROM tags WHERE name = %s", (name,))
+                    # 标签由管理员统一管理：普通用户只挂已发布标签（未知/未发布静默忽略），管理员可顺手建新标签
+                    if admin_import:
+                        cur.execute("SELECT id FROM tags WHERE name = %s", (name,))
+                    else:
+                        cur.execute(
+                            "SELECT id FROM tags WHERE name = %s AND is_published = 1", (name,)
+                        )
                     row = cur.fetchone()
                     tag_id = row["id"] if row else None
                     if tag_id is None:
-                        cur.execute("INSERT INTO tags (name) VALUES (%s)", (name,))
+                        if not admin_import:
+                            continue
+                        cur.execute(
+                            "INSERT INTO tags (name, is_published) VALUES (%s, 1)", (name,)
+                        )
                         tag_id = cur.lastrowid
                     cur.execute(
                         "INSERT IGNORE INTO video_tags (video_id, tag_id) VALUES (%s, %s)",

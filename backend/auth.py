@@ -45,16 +45,39 @@ def is_super_admin(user):
     return bool(user) and user.get("role") == "admin"
 
 
+# 角色层级：admin 超级管理员(3) > manager 管理员(2) / reviewer 审核员(2) > user 普通用户(1)
+ROLE_LEVELS = {"admin": 3, "manager": 2, "reviewer": 2, "user": 1}
+
+# 「平级及以下」的角色集合：管理员可见/可审这些用户上传的视频（reviewer 归入平级）
+LOWER_ROLES = ("manager", "reviewer", "user")
+LOWER_ROLES_SQL = "('manager', 'reviewer', 'user')"
+
+
+def role_level(user):
+    """返回角色层级数字，用于平级及以下判断；未知角色按普通用户处理"""
+    return ROLE_LEVELS.get(user.get("role") if user else None, 1)
+
+
 def can_audit(user):
-    """是否有审核权：超管 admin 与独立审核员 reviewer（reviewer 不拥有数据管理权）"""
-    return bool(user) and user.get("role") in ("admin", "reviewer")
+    """是否有审核权：超管 admin、管理员 manager（限平级及以下）与独立审核员 reviewer"""
+    return bool(user) and user.get("role") in ("admin", "reviewer", "manager")
 
 
 def visible_sql(user):
-    """「可观看」SQL 条件片段：本人视频 OR 已通过审核的公开视频；超管/审核员可见全部。
-    列名不带表前缀（videos 是唯一含 user_id / is_public / audit_status 列的表，多表关联查询中同样无歧义）"""
-    if is_super_admin(user) or can_audit(user):
+    """「可观看」SQL 条件片段。列名不带表前缀（videos 是唯一含 user_id / is_public / audit_status 列的表）。
+
+    - 超管 / 审核员：全部视频可见；
+    - 管理员（manager）：平级及以下用户（manager / reviewer / user）的全部视频可见（含待审核），
+      超管上传的视频不可见；
+    - 普通用户：本人视频 OR 已通过审核的公开视频。"""
+    role = user.get("role") if user else None
+    if role in ("admin", "reviewer"):
         return "TRUE", []
+    if role == "manager":
+        return (
+            f"user_id IN (SELECT id FROM users WHERE role IN {LOWER_ROLES_SQL})",
+            [],
+        )
     return "(user_id = %s OR (is_public = 1 AND audit_status = 1))", [user["id"]]
 
 

@@ -36,8 +36,8 @@ router.beforeEach(async (to) => {
   if (!user) {
     return { name: 'login', query: { redirect: to.fullPath } } // 登录后跳回原目标页
   }
-  // 审核中心：超管或独立审核员可进；站点管理：仅超管
-  if (to.name === 'audit' && !['admin', 'reviewer'].includes(user.role)) {
+  // 审核中心：超管、管理员或独立审核员可进；站点管理：仅超管
+  if (to.name === 'audit' && !['admin', 'reviewer', 'manager'].includes(user.role)) {
     return { name: 'list' }
   }
   if (to.name === 'admin' && user.role !== 'admin') {

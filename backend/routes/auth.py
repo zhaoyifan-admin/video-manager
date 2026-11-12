@@ -140,10 +140,10 @@ def list_users():
 @require_login
 @require_admin
 def change_role(user_id):
-    """设置账号角色：user 普通用户 / reviewer 独立审核员 / admin 超级管理员"""
+    """设置账号角色：user 普通用户 / reviewer 独立审核员 / manager 管理员 / admin 超级管理员"""
     role = (request.get_json(silent=True) or {}).get("role")
-    if role not in ("user", "reviewer", "admin"):
-        return fail("角色无效（user / reviewer / admin）")
+    if role not in ("user", "reviewer", "manager", "admin"):
+        return fail("角色无效（user / reviewer / manager / admin）")
     if user_id == g.user["id"] and role != "admin":
         return fail("不能降低自己的管理员权限")
     result = db.execute("UPDATE users SET role = %s WHERE id = %s", (role, user_id))
@@ -165,8 +165,8 @@ def create_user():
         return fail("用户名需 2-50 位，仅限中文、字母、数字、下划线")
     if len(password) < 6:
         return fail("密码至少 6 位")
-    if role not in ("user", "reviewer", "admin"):
-        return fail("角色无效（user / reviewer / admin）")
+    if role not in ("user", "reviewer", "manager", "admin"):
+        return fail("角色无效（user / reviewer / manager / admin）")
     if db.query("SELECT id FROM users WHERE username = %s", (username,), one=True):
         return fail("该用户名已被注册")
     result = db.execute(

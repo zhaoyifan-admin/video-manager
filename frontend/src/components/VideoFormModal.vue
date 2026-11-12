@@ -27,7 +27,7 @@ const collections = ref([])
 const originalPath = ref('')
 const originalSubtitle = ref('')
 const newTypeNameInline = ref('') // 直接输入新类型，保存时自动创建
-const newFormTag = ref('') // 直接输入新标签，回车加入
+// 标签改为管理员统一管理发布：表单里只从已发布标签中挑选，不再内联新建
 
 // 标签 / 类型选项（每次打开时刷新，保证拿到最新数据）
 const tags = ref([])
@@ -48,7 +48,6 @@ const open = async (row = null) => {
   originalPath.value = form.filePath
   originalSubtitle.value = form.subtitlePath
   newTypeNameInline.value = ''
-  newFormTag.value = ''
   pendingFile.value = null
   saveDir.value = ''
   visible.value = true
@@ -84,13 +83,6 @@ const toggleFormTag = (name) => {
   const i = form.tags.indexOf(name)
   if (i > -1) form.tags.splice(i, 1)
   else form.tags.push(name)
-}
-
-const addFormTag = () => {
-  const name = newFormTag.value.trim()
-  if (!name) return
-  if (!form.tags.includes(name)) form.tags.push(name)
-  newFormTag.value = ''
 }
 
 // 隐藏的文件输入框：选择后暂存，点「保存」时才上传到指定保存目录
@@ -288,17 +280,11 @@ const submitForm = async () => {
           :class="{ on: form.tags.includes(t.name) }"
           @click="toggleFormTag(t.name)"
         >
-          {{ t.name }}
+          {{ t.name }}<span v-if="t.isPublished === false" class="chip-unpub">未发布</span>
         </button>
-        <span v-if="!tags.length" class="no-chip">暂无标签，可在下方输入框添加</span>
+        <span v-if="!tags.length" class="no-chip">暂无可选标签，请联系管理员在「站点管理 → 标签管理」中创建并发布</span>
       </div>
-      <input
-        v-model="newFormTag"
-        class="nf-input inline-add"
-        placeholder="输入新标签后回车添加"
-        maxlength="50"
-        @keyup.enter="addFormTag"
-      />
+      <span class="upload-hint">标签由管理员统一创建与发布，这里只能从已发布的标签中选择</span>
     </div>
     <div class="nf-field">
       <label class="nf-label">备注</label>
@@ -504,6 +490,17 @@ const submitForm = async () => {
   margin-top: 9px;
   height: 32px;
   font-size: 12.5px;
+}
+
+/* 管理员视角下未发布标签的角标 */
+.chip-unpub {
+  margin-left: 5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(230, 160, 30, 0.2);
+  color: #e6a01e;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .no-chip {

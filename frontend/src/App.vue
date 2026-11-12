@@ -33,8 +33,8 @@ const { user, resetAuth } = useAuth()
 
 // 超级管理员：可查看并管理所有用户的视频
 const isSuperAdmin = computed(() => user.value?.role === 'admin')
-// 有审核权：超管或独立审核员（可进审核中心）
-const canAudit = computed(() => ['admin', 'reviewer'].includes(user.value?.role))
+// 有审核权：超管、管理员（限平级及以下）或独立审核员（可进审核中心）
+const canAudit = computed(() => ['admin', 'reviewer', 'manager'].includes(user.value?.role))
 
 // 编辑/删除/公开设置权限：本人视频或超级管理员
 const canManage = (row) => isSuperAdmin.value || row.ownerId === user.value?.id
@@ -55,7 +55,8 @@ const tags = ref([])
 const types = ref([])
 
 const loadTags = async () => {
-  tags.value = await listTags()
+  // 普通用户接口已只返回已发布标签；管理员会拿到 isPublished 字段，筛选项里过滤掉未发布的
+  tags.value = (await listTags()).filter((t) => t.isPublished !== false)
 }
 
 const loadTypes = async () => {
@@ -149,7 +150,13 @@ const removeVideo = async (row) => {
   if (!ok) return
   try {
     const data = await deleteVideo(row.id)
-    showToast(data?.fileDeleted ? '已删除（源文件已一并清理）' : '已删除（源文件不存在，仅清理记录）')
+    if (data?.fileDeleted) {
+      showToast('已删除（源文件已一并清理）')
+    } else if (data?.fileMissing) {
+      showToast('已删除（源文件本就不存在，仅清理记录）')
+    } else {
+      showToast.warning('记录已删除，但源文件未能删除（可能正被播放占用或不在媒体白名单内），请到所在文件夹手动删除')
+    }
     await Promise.all([fetchVideos(), loadFeatured()])
   } catch (e) {
     showToast.error(e.message)
@@ -265,15 +272,21 @@ const batchDelete = async () => {
   })
   if (!ok) return
   let n = 0
+  let sourceLeft = 0 // 源文件仍在磁盘上的条数（被占用 / 白名单外）
   for (const id of selectedIds.value) {
     try {
-      await deleteVideo(id)
+      const data = await deleteVideo(id)
       n += 1
+      if (data && !data.fileDeleted && !data.fileMissing) sourceLeft += 1
     } catch {
       // 单条失败不影响其余
     }
   }
-  showToast(`已删除 ${n} 部影片`)
+  if (sourceLeft > 0) {
+    showToast.warning(`已删除 ${n} 部影片，其中 ${sourceLeft} 部的源文件未能删除（被占用或不在媒体白名单内），请手动处理`)
+  } else {
+    showToast(`已删除 ${n} 部影片`)
+  }
   selectedIds.value = []
   batchMode.value = false
   await Promise.all([fetchVideos(), loadFeatured(), loadNoticeCount()])

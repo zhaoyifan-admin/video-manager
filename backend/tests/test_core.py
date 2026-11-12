@@ -8,7 +8,9 @@
 """
 import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -23,7 +25,7 @@ class CoreTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.ids = {}
-        for key, role in (("admin", "admin"), ("user", "user"), ("reviewer", "reviewer")):
+        for key, role in (("admin", "admin"), ("manager", "manager"), ("user", "user"), ("reviewer", "reviewer")):
             name = PREFIX + key
             db.execute("DELETE FROM users WHERE username = %s", (name,))
             result = db.execute(
@@ -79,8 +81,11 @@ class CoreTest(unittest.TestCase):
         # 白名单外的路径不能被当做本地文件读取；文件不存在时同样返回 404
         self.assertEqual(self.call("get", f"/api/videos/{vid}/file", "user", expect=404)["code"], 1)
 
-    def test_03_delete_does_not_remove_file_outside_whitelist(self):
-        outside = "/tmp/__test_video_manager_outside.mp4"
+    def test_03_delete_source_file_three_states(self):
+        # 跨平台：把白名单收窄到 uploads，验证白名单外的真实文件不被物理删除
+        # （Windows 下所有盘符都在白名单内，必须收窄才能构造「白名单外」场景）
+        import storage
+        outside = os.path.join(tempfile.gettempdir(), "__test_video_manager_outside.mp4")
         with open(outside, "wb") as f:
             f.write(b"keep me")
         try:
@@ -88,12 +93,38 @@ class CoreTest(unittest.TestCase):
                 "INSERT INTO videos (user_id, title, file_path, audit_status) VALUES (%s, %s, %s, 1)",
                 (self.ids["user"], "白名单外文件", outside),
             )["lastrowid"]
-            data = self.ok(self.call("delete", f"/api/videos/{vid}", "user"))
+            narrow = [os.path.realpath(storage.UPLOAD_DIR)]
+            with mock.patch.object(storage, "media_roots", return_value=narrow):
+                data = self.ok(self.call("delete", f"/api/videos/{vid}", "user"))
+            # 白名单外：文件存在但删不掉 → fileDeleted/fileMissing 均为 False（前端提示手动处理）
             self.assertFalse(data["fileDeleted"])
+            self.assertFalse(data.get("fileMissing"))
             self.assertTrue(os.path.isfile(outside), "不应删除白名单外的真实文件")
         finally:
             if os.path.isfile(outside):
                 os.remove(outside)
+
+        # 白名单内：删除记录时应连源文件一起物理删除
+        inside_name = "__test_inside_delete.mp4"
+        inside = os.path.join(storage.UPLOAD_DIR, inside_name)
+        with open(inside, "wb") as f:
+            f.write(b"inside")
+        vid2 = db.execute(
+            "INSERT INTO videos (user_id, title, file_path, audit_status) VALUES (%s, %s, %s, 1)",
+            (self.ids["user"], "白名单内文件", f"uploads/{inside_name}"),
+        )["lastrowid"]
+        data2 = self.ok(self.call("delete", f"/api/videos/{vid2}", "user"))
+        self.assertTrue(data2["fileDeleted"])
+        self.assertFalse(os.path.isfile(inside), "白名单内源文件应被一并删除")
+
+        # 源文件本就不存在：仅清理记录，标记 fileMissing
+        vid3 = db.execute(
+            "INSERT INTO videos (user_id, title, file_path, audit_status) VALUES (%s, %s, %s, 1)",
+            (self.ids["user"], "源文件丢失", "uploads/__test_never_existed.mp4"),
+        )["lastrowid"]
+        data3 = self.ok(self.call("delete", f"/api/videos/{vid3}", "user"))
+        self.assertFalse(data3["fileDeleted"])
+        self.assertTrue(data3["fileMissing"])
 
     # ---------- 审核绕过修复 ----------
     def test_04_changing_file_reopens_audit(self):
@@ -208,6 +239,76 @@ class CoreTest(unittest.TestCase):
         ]}))
         self.assertEqual(body["success"], 1)
         self.assertEqual(len(body["failed"]), 1)
+
+    # ---------- 标签权限：仅管理员可增删改并发布 ----------
+    def test_14_tag_management_admin_only(self):
+        name = PREFIX + "标签A"
+        # 普通用户与审核员都不能增删改标签
+        self.assertEqual(self.call("post", "/api/tags", "user", expect=403, json={"name": name})["code"], 1)
+        self.assertEqual(self.call("post", "/api/tags", "reviewer", expect=403, json={"name": name})["code"], 1)
+        # 管理员创建（默认未发布）：普通用户列表不可见，管理员可见
+        data = self.ok(self.call("post", "/api/tags", "admin", json={"name": name}))
+        tid = data["id"]
+        self.assertFalse(data["isPublished"])
+        self.assertNotIn(name, [t["name"] for t in self.ok(self.call("get", "/api/tags", "user"))])
+        self.assertIn(name, [t["name"] for t in self.ok(self.call("get", "/api/tags", "admin"))])
+        # 发布后普通用户可见；改名同步生效
+        self.ok(self.call("put", f"/api/tags/{tid}", "admin", json={"isPublished": True}))
+        self.assertIn(name, [t["name"] for t in self.ok(self.call("get", "/api/tags", "user"))])
+        name2 = PREFIX + "标签B"
+        self.ok(self.call("put", f"/api/tags/{tid}", "admin", json={"name": name2}))
+        # 普通用户保存视频：未发布 / 未知标签静默忽略，不自动创建
+        vid = self.make_video("user", "标签过滤", tags=[name2, PREFIX + "未知标"])
+        rows = db.query(
+            "SELECT t.name FROM video_tags vt JOIN tags t ON t.id = vt.tag_id WHERE vt.video_id = %s",
+            (vid,),
+        )
+        self.assertEqual([r["name"] for r in rows], [name2])
+        self.assertIsNone(db.query("SELECT id FROM tags WHERE name = %s", (PREFIX + "未知标",), one=True))
+        # 管理员保存视频：未知标签自动创建并发布
+        vid2 = self.make_video("admin", "管理员建标", tags=[PREFIX + "管理员新标"])
+        rows = db.query(
+            "SELECT t.is_published FROM video_tags vt JOIN tags t ON t.id = vt.tag_id WHERE vt.video_id = %s",
+            (vid2,),
+        )
+        self.assertEqual(rows[0]["is_published"], 1)
+        # 清理测试标签
+        for n in (name2, PREFIX + "管理员新标"):
+            row = db.query("SELECT id FROM tags WHERE name = %s", (n,), one=True)
+            if row:
+                db.execute("DELETE FROM tags WHERE id = %s", (row["id"],))
+
+    # ---------- 角色层级：管理员平级及以下可见/可审 ----------
+    def test_15_role_hierarchy_visibility(self):
+        vid_user = self.make_video("user", "用户待审片")     # 普通用户上传（待审核）
+        vid_admin = self.make_video("admin", "超管的片")     # 超管上传（免审通过）
+        vid_mgr = self.make_video("manager", "管理员待审片")  # 管理员上传（待审核）
+
+        # 管理员：平级及以下用户的视频全部可见（含待审核），超管的不可见
+        self.assertEqual(self.call("get", f"/api/videos/{vid_user}", "manager")["code"], 0)
+        self.assertEqual(self.call("get", f"/api/videos/{vid_mgr}", "manager")["code"], 0)
+        body = self.call("get", f"/api/videos/{vid_admin}", "manager", expect=404)
+        self.assertNotEqual(body["code"], 0)
+        # 审核范围：能看到用户/管理员的待审片，看不到超管的
+        audit_ids = [x["id"] for x in self.ok(self.call("get", "/api/videos?scope=audit&pageSize=100", "manager"))["items"]]
+        self.assertIn(vid_user, audit_ids)
+        self.assertIn(vid_mgr, audit_ids)
+        self.assertNotIn(vid_admin, audit_ids)
+        # 管理员有审核权：可审平级及以下，不可审超管的
+        self.ok(self.audit(vid_user, 1, key="manager"))
+        body = self.call("post", f"/api/videos/{vid_admin}/audit", "manager", expect=403,
+                         json={"status": 1, "reason": ""})
+        self.assertNotEqual(body["code"], 0)
+        # 管理员无管理权：不能编辑/删除他人视频
+        body = self.call("delete", f"/api/videos/{vid_user}", "manager", expect=404)
+        self.assertNotEqual(body["code"], 0)
+        # 普通用户：看不到管理员上传的待审片
+        body = self.call("get", f"/api/videos/{vid_mgr}", "user", expect=404)
+        self.assertNotEqual(body["code"], 0)
+        # 审核员保持现状：全部可见
+        self.assertEqual(self.call("get", f"/api/videos/{vid_admin}", "reviewer")["code"], 0)
+        # 超管：全部可见
+        self.assertEqual(self.call("get", f"/api/videos/{vid_mgr}", "admin")["code"], 0)
 
 
 if __name__ == "__main__":

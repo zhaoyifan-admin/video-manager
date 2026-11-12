@@ -37,7 +37,7 @@ export const logout = () => http.post('/auth/logout', null, { _skipAuthRedirect:
 export const getMe = () => http.get('/auth/me', { _skipAuthRedirect: true })
 // 公开运行配置（注册开关 / 单用户配额）
 export const getAuthConfig = () => http.get('/auth/config', { _skipAuthRedirect: true })
-// 超管：账号列表与角色分配（user / reviewer / admin）
+// 超管：账号列表与角色分配（user / manager / reviewer / admin）
 export const listUsers = () => http.get('/auth/users')
 export const setUserRole = (id, role) => http.post(`/auth/users/${id}/role`, { role })
 export const createUser = (username, password, role) =>
@@ -47,9 +47,10 @@ export const createUser = (username, password, role) =>
 export const checkUsername = (username) =>
   http.get('/auth/check-username', { params: { username }, _skipAuthRedirect: true })
 
-// ---------- 标签 ----------
+// ---------- 标签（增删改仅超管，普通用户只读已发布标签） ----------
 export const listTags = () => http.get('/tags')
 export const createTag = (name) => http.post('/tags', { name })
+export const updateTag = (id, data) => http.put(`/tags/${id}`, data)
 export const deleteTag = (id) => http.delete(`/tags/${id}`)
 
 // ---------- 影视类型 ----------

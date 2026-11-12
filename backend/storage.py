@@ -83,10 +83,12 @@ def media_roots():
 
 
 def is_within(path, roots=None):
-    """path 是否落在任一媒体根目录内（realpath 后比较，挡符号链接逃逸）"""
+    """path 是否落在任一媒体根目录内（realpath 后比较，挡符号链接逃逸）。
+    盘符根（如 Windows 的 "C:\\"）需去掉尾部分隔符再做前缀比较，否则子路径全部失配"""
     real = os.path.realpath(os.path.abspath(path))
     for root in media_roots() if roots is None else roots:
-        if real == root or real.startswith(root + os.sep):
+        base = root.rstrip(os.sep) or root
+        if real == root or real == base or real.startswith(base + os.sep):
             return True
     return False
 
@@ -135,19 +137,32 @@ def resolve_video_path(path):
 def delete_source_file(path):
     """物理删除视频源文件（单文件删除，绝不递归）。
 
-    仅允许删除通过白名单校验的普通视频文件；不存在或路径无效时静默跳过，
-    不影响数据库删除结果。"""
-    resolved = resolve_video_path(path)
-    if not resolved:
-        return False
-    try:
-        real = os.path.realpath(resolved)
-        if not os.path.isfile(real):
-            return False
-        os.remove(real)
-        return True
-    except OSError:
-        return False
+    返回 (deleted, missing) 两个布尔值，供调用方区分三种结果并如实提示用户：
+      - deleted=True：文件已成功删除；
+      - missing=True：路径不在媒体白名单内、无法解析，或文件本就不存在（无文件可删，仅清理记录）；
+      - 两者皆 False：文件存在但删除失败（如 Windows 下文件正被播放器占用），需提示用户手动处理。"""
+    stored, error = validate_media_path(path)
+    if error or not stored or is_remote_url(stored):
+        # 路径不合法 / 不在白名单：不能按库里的路径碰磁盘，文件是否真实存在未知，按「删不掉」处理
+        return False, False
+    real = os.path.realpath(stored if os.path.isabs(stored) else os.path.join(BASE_DIR, stored))
+    if not os.path.isfile(real):
+        return False, True  # 文件本就不存在（已被移走或手动删除），视为无文件可删
+    # Windows 下浏览器/播放器可能仍持有文件句柄，短暂重试等句柄释放
+    last_error = None
+    for attempt in range(4):
+        try:
+            os.remove(real)
+            return True, False
+        except FileNotFoundError:
+            return False, True
+        except OSError as exc:
+            last_error = exc
+            if attempt < 3:
+                time.sleep(0.4)
+    # 重试后仍失败：文件确实还在，调用方必须提示用户手动删除
+    print(f"[storage] 源文件删除失败（重试 4 次）：{real} -> {last_error}", flush=True)
+    return False, False
 
 
 # 字幕等非视频资源复用同一套白名单，但使用各自的扩展名集合
