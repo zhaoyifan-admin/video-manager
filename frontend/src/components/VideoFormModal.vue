@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from '../composables/icons'
+import FaIcon from '../ui/FaIcon.vue'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import NfModal from '../ui/NfModal.vue'
@@ -139,10 +141,10 @@ const submitForm = async () => {
       filePath = data.filePath
       showToast('视频文件已保存到目标文件夹')
     }
-    // 影视类型：允许直接输入新类型，先创建再取 id
+    // 影视类型：允许直接输入新类型，先创建再取 id（管理员直接发布，普通用户进待审核）
     let typeId = form.typeId
     if (newTypeNameInline.value.trim()) {
-      const created = await createType(newTypeNameInline.value.trim())
+      const created = await createType(newTypeNameInline.value.trim(), isSuperAdmin.value)
       typeId = created.id
     }
     const payload = {
@@ -203,18 +205,18 @@ const submitForm = async () => {
           <button class="nf-btn ghost" @click="pickFile">
             {{ pendingFile ? '重新选择文件' : '选择文件' }}
           </button>
-          <button class="nf-btn ghost" @click="openPathPicker">选择保存文件夹</button>
+          <button class="nf-btn ghost" @click="openPathPicker"><FaIcon :icon="ICONS.folderOpen" :fixed="false" />选择保存文件夹</button>
         </div>
         <div v-if="pendingFile" class="picked-file">
           <span class="picked-name" :title="pendingFile.name">{{ pendingFile.name }}</span>
-          <button class="picked-x" title="放弃该文件" @click="clearPendingFile">✕</button>
+          <button class="picked-x" title="放弃该文件" @click="clearPendingFile"><FaIcon :icon="ICONS.close" :fixed="false" /></button>
         </div>
         <div class="save-dir-box">
           <template v-if="saveDir">
-            <span class="save-dir-path" :title="saveDir">📁 {{ saveDir }}</span>
-            <button class="save-dir-clear" title="恢复默认保存位置" @click="clearSaveDir">恢复默认</button>
+            <span class="save-dir-path" :title="saveDir"><FaIcon :icon="ICONS.folderOpen" :fixed="false" /> {{ saveDir }}</span>
+            <button class="save-dir-clear" title="恢复默认保存位置" @click="clearSaveDir"><FaIcon :icon="ICONS.reset" :fixed="false" />恢复默认</button>
           </template>
-          <span v-else class="save-dir-default">📁 默认保存到应用 uploads 目录</span>
+          <span v-else class="save-dir-default"><FaIcon :icon="ICONS.folderOpen" :fixed="false" /> 默认保存到应用 uploads 目录</span>
         </div>
         <span class="upload-hint">
           点「保存」时才会把文件写入所选文件夹；文件夹不存在可在选择器里新建；标题自动取原始文件名
@@ -260,7 +262,7 @@ const submitForm = async () => {
           :class="{ on: form.typeId === t.id }"
           @click="form.typeId = t.id"
         >
-          {{ t.name }}
+          {{ t.name }}<span v-if="t.isPublished === false" class="chip-unpub">未发布</span>
         </button>
       </div>
       <input
@@ -282,9 +284,9 @@ const submitForm = async () => {
         >
           {{ t.name }}<span v-if="t.isPublished === false" class="chip-unpub">未发布</span>
         </button>
-        <span v-if="!tags.length" class="no-chip">暂无可选标签，请联系管理员在「站点管理 → 标签管理」中创建并发布</span>
+        <span v-if="!tags.length" class="no-chip">暂无可选标签，可在「标签 / 类型管理」中提交新标签，审核通过后即可选用</span>
       </div>
-      <span class="upload-hint">标签由管理员统一创建与发布，这里只能从已发布的标签中选择</span>
+      <span class="upload-hint">标签由系统统一管理：可直接选用已发布的标签；需要新标签请在「标签 / 类型管理」中提交，管理员审核通过后方可选用</span>
     </div>
     <div class="nf-field">
       <label class="nf-label">备注</label>
@@ -305,7 +307,7 @@ const submitForm = async () => {
       <div class="public-hint">{{ publicHint }}</div>
     </div>
     <template #footer>
-      <button class="nf-btn ghost" @click="visible = false">取消</button>
+      <button class="nf-btn ghost" @click="visible = false"><FaIcon :icon="ICONS.close" :fixed="false" />取消</button>
       <button class="nf-btn red" :disabled="submitting" @click="submitForm">
         {{ submitting ? '保存中…' : '保存' }}
       </button>

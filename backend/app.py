@@ -55,6 +55,10 @@ def create_app():
     def serve_frontend(path):
         if path and os.path.isfile(os.path.join(DIST_DIR, path)):
             return send_from_directory(DIST_DIR, path)
+        # 静态资源缺失时直接 404，不能拿 index.html 冒充 JS/CSS：
+        # 否则浏览器按 text/html 收到脚本却报 200，白屏问题很难定位
+        if path.startswith("assets/"):
+            return jsonify({"code": 1, "msg": "静态资源不存在"}), 404
         # 前端路由（/play/:id、/detail/:id）回退到 index.html，由 vue-router 接管
         return send_from_directory(DIST_DIR, "index.html")
 

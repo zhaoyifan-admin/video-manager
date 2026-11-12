@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from '../composables/icons'
+import FaIcon from '../ui/FaIcon.vue'
 import { computed, ref } from 'vue'
 import NfModal from '../ui/NfModal.vue'
 import { batchImportVideos } from '../api'
@@ -101,7 +103,7 @@ const doBatchImport = async () => {
 https://example.com/watch?v=123 | 在线课程 | 前端 | 教程 | 共12集"
     ></textarea>
     <template #footer>
-      <button class="nf-btn ghost" @click="visible = false">取消</button>
+      <button class="nf-btn ghost" @click="visible = false"><FaIcon :icon="ICONS.close" :fixed="false" />取消</button>
       <button class="nf-btn red" :disabled="batchImporting" @click="doBatchImport">
         {{ batchImporting ? '导入中…' : '开始导入' }}
       </button>

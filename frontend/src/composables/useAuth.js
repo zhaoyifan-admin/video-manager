@@ -33,6 +33,11 @@ export const resetAuth = () => {
   readyPromise = null
 }
 
+// 合并更新本地用户态（如上传头像后仅刷新 avatar 字段），避免重新请求 /auth/me
+export const patchUser = (patch) => {
+  user.value = { ...(user.value || {}), ...patch }
+}
+
 export function useAuth() {
-  return { user, ensureLoaded, setUser, resetAuth, fetchMe }
+  return { user, ensureLoaded, setUser, resetAuth, fetchMe, patchUser }
 }

@@ -149,6 +149,7 @@ button {
 .nf-btn-menu {
   display: flex;
   align-items: center;
+  gap: 9px; /* Font Awesome 图标与菜单文字的间距 */
   width: 100%;
   padding: 9px 16px;
   border: none;

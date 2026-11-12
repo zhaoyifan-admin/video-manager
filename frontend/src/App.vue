@@ -1,15 +1,21 @@
 <script setup>
+import { ICONS } from './composables/icons'
+import FaIcon from './ui/FaIcon.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import SiteNav from './components/SiteNav.vue'
 import HeroCarousel from './components/HeroCarousel.vue'
 import VideoCard from './components/VideoCard.vue'
+import ChannelFilter from './components/ChannelFilter.vue'
+import ChannelPosterCard from './components/ChannelPosterCard.vue'
 import PaginationBar from './components/PaginationBar.vue'
 import VideoFormModal from './components/VideoFormModal.vue'
 import BatchImportModal from './components/BatchImportModal.vue'
 import ManageModal from './components/ManageModal.vue'
+import PersonalCenterModal from './components/PersonalCenterModal.vue'
 import { useVideos } from './composables/useVideos'
 import { useAuth } from './composables/useAuth'
+import { getPreset, DENSITY_CLASS } from './composables/channelPresets'
 import {
   listTags,
   listTypes,
@@ -60,7 +66,8 @@ const loadTags = async () => {
 }
 
 const loadTypes = async () => {
-  types.value = await listTypes()
+  // 待审核 / 未发布的类型不进频道导航（接口现已对普通用户返回 isPublished）
+  types.value = (await listTypes()).filter((t) => t.isPublished !== false)
 }
 
 // ================= 查询 / 分页（来自 useVideos 组合式函数） =================
@@ -73,13 +80,30 @@ const {
   onSearch,
   selectType,
   toggleFavFilter,
+  applyFilter,
+  resetChannelFilters,
   goPage,
   changeSize,
   refreshIfFavMode,
 } = useVideos()
 
+// ================= 频道视图：不同频道 → 不同筛选行 / 排序 / 配色 / 海报密度 =================
+const isHome = computed(() => !query.favorite && query.typeId === 0)
+const isFavMode = computed(() => !!query.favorite)
+const isChannelMode = computed(() => !query.favorite && query.typeId !== 0)
+const activeChannel = computed(() => types.value.find((t) => t.id === query.typeId))
+const channelName = computed(() => activeChannel.value?.name || '全部影片')
+const preset = computed(() => getPreset(isHome.value ? '' : channelName.value))
+const gridClass = computed(() => DENSITY_CLASS[preset.value.density] || DENSITY_CLASS.mid)
+// 面板已提供「合集」行的频道，不再重复显示旧版合集下拉
+const showCollectionSelect = computed(
+  () => isFavMode.value || !preset.value.rows.includes('collection'),
+)
+const hasChannelFilters = computed(
+  () => !!(query.tagId || query.collectionId || query.region || query.language || query.year || query.letter),
+)
+
 // ================= 大图轮播：按热度取最多 9 条（独立于当前分页列表） =================
-// 后端按「播放次数 + 收藏人数×5」倒序返回，避免轮播只从当前页 12 条里挑
 const featuredVideos = ref([])
 
 const loadFeatured = async () => {
@@ -104,15 +128,8 @@ const currentTypeName = computed(() => {
 })
 
 // ================= 播放 / 详情：两个独立动作 =================
-// 播放：跳独立播放页（自动播放）
-const playVideo = (row) => {
-  router.push({ name: 'play', params: { id: row.id } })
-}
-
-// 详情：跳独立详情页（只看信息，不承担播放）
-const openDetail = (row) => {
-  router.push({ name: 'detail', params: { id: row.id } })
-}
+const playVideo = (row) => router.push({ name: 'play', params: { id: row.id } })
+const openDetail = (row) => router.push({ name: 'detail', params: { id: row.id } })
 
 // ================= 收藏 =================
 const toggleFavoriteState = async (row) => {
@@ -120,8 +137,8 @@ const toggleFavoriteState = async (row) => {
     const data = await toggleFavorite(row.id)
     row.isFavorite = data.isFavorite
     if (typeof data.favoriteCount === 'number') row.favoriteCount = data.favoriteCount
-    refreshIfFavMode() // 「我的收藏」模式下取消收藏后列表需要刷新
-    loadFeatured() // 收藏人数变化会影响轮播热度排序
+    refreshIfFavMode()
+    loadFeatured()
     showToast(data.isFavorite ? '已收藏' : '已取消收藏')
   } catch (e) {
     showToast.error(e.message)
@@ -167,22 +184,21 @@ const removeVideo = async (row) => {
 const formModal = ref(null)
 const batchModal = ref(null)
 const manageModal = ref(null)
+const personalOpen = ref(false)
 
 const openForm = (row = null) => formModal.value?.open(row)
 
-// 新增/编辑保存后：刷新列表 + 标签 + 类型（新类型/标签可能已创建）+ 两个角标
 const onFormSaved = async () => {
   await Promise.all([fetchVideos(), loadFeatured(), loadTags(), loadTypes(), loadPendingCount(), loadNoticeCount()])
 }
 
-// 管理弹窗变更后：刷新导航与筛选用的标签/类型
 const onManageChanged = async () => {
   await Promise.all([loadTags(), loadTypes()])
 }
 
 // ================= 管理员审核 =================
-const pendingCount = ref(0) // 待审核数量（导航角标）
-const noticeCount = ref(0) // 本人未读的驳回通知数（审核结果角标）
+const pendingCount = ref(0)
+const noticeCount = ref(0)
 
 const loadPendingCount = async () => {
   if (!canAudit.value) return
@@ -224,6 +240,11 @@ const loadWatchHistory = async () => {
 }
 
 const changeSort = () => {
+  query.page = 1
+  fetchVideos()
+}
+
+const changeCollection = () => {
   query.page = 1
   fetchVideos()
 }
@@ -272,7 +293,7 @@ const batchDelete = async () => {
   })
   if (!ok) return
   let n = 0
-  let sourceLeft = 0 // 源文件仍在磁盘上的条数（被占用 / 白名单外）
+  let sourceLeft = 0
   for (const id of selectedIds.value) {
     try {
       const data = await deleteVideo(id)
@@ -292,19 +313,11 @@ const batchDelete = async () => {
   await Promise.all([fetchVideos(), loadFeatured(), loadNoticeCount()])
 }
 
-const changeCollection = () => {
-  query.page = 1
-  fetchVideos()
-}
-
 // 秒 → mm:ss（继续观看角标）
 const formatClock = (seconds) => {
   const t = Math.max(0, Math.floor(Number(seconds) || 0))
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
 }
-
-// 审核统一在「审核中心」表格页进行（驳回需填写理由），主列表不再提供快捷审核
-// 审核结果页内完成操作后，回到列表页时组件重新挂载，会自动刷新列表与角标
 
 onMounted(() => {
   loadTags().catch((e) => showToast.error(e.message))
@@ -325,6 +338,7 @@ onMounted(() => {
     :active-type-id="query.typeId"
     :fav-active="!!query.favorite"
     :username="user?.username || ''"
+    :avatar="user?.avatar || ''"
     :is-admin="isSuperAdmin"
     :can-audit="canAudit"
     :pending-count="pendingCount"
@@ -335,52 +349,96 @@ onMounted(() => {
     @manage="manageModal?.open()"
     @batch="batchModal?.open()"
     @create="openForm()"
+    @open-personal="personalOpen = true"
     @logout="handleLogout"
   />
 
-  <!-- Hero 大图轮播 -->
-  <HeroCarousel :videos="featuredVideos" @play="playVideo" @detail="openDetail" />
+  <!-- Hero 大图轮播：仅首页保留；频道页让筛选面板置顶（对齐 VOD 频道页） -->
+  <HeroCarousel v-if="isHome && featuredVideos.length" :videos="featuredVideos" @play="playVideo" @detail="openDetail" />
 
-  <!-- ===== 影库主体 ===== -->
-  <main class="page" :class="{ 'no-hero': !featuredVideos.length }">
-    <!-- 继续观看：从上次进度续播 -->
-    <div v-if="watchHistory.length" class="resume-bar">
-      <span class="resume-label">继续观看</span>
+  <!-- ===== 影库主体：全部样式使用 Tailwind 工具类 ===== -->
+  <main
+    class="mx-auto max-w-[1400px] px-10 pb-10 max-[900px]:px-5 max-[900px]:pb-8"
+    :class="isHome && featuredVideos.length ? 'pt-[26px]' : 'pt-9'"
+  >
+    <!-- 频道筛选面板：首页为简版（仅频道切换 + 排序），具体频道为专属完整版 -->
+    <ChannelFilter
+      v-if="!isFavMode"
+      :preset="preset"
+      :channel-name="channelName"
+      :channels="types"
+      :active-id="query.typeId"
+      :tags="tags"
+      :collections="collections"
+      :query="query"
+      :total="total"
+      @select-channel="selectType"
+      @apply="applyFilter"
+      @reset="resetChannelFilters"
+    />
+
+    <!-- 继续观看：仅首页展示 -->
+    <div
+      v-if="isHome && watchHistory.length"
+      class="mb-[22px] flex flex-wrap items-center gap-2.5 rounded-lg border border-[#2a2a30] bg-[#151518] px-3.5 py-3"
+    >
+      <span class="text-[13px] font-bold tracking-[1px] text-nf-red">继续观看</span>
       <button
         v-for="w in watchHistory"
         :key="w.id"
-        class="resume-item"
+        class="inline-flex max-w-[240px] items-center gap-2 rounded-[20px] border border-nf-line bg-[#202025] px-3 py-1.5 text-[12.5px] text-[#d8d8d8] transition-colors hover:border-nf-red hover:text-white"
         :title="`从 ${formatClock(w.position)} 继续播放「${w.title}」`"
         @click="playVideo({ id: w.id })"
       >
-        <span class="resume-title">{{ w.title }}</span>
-        <span class="resume-pos">{{ formatClock(w.position) }}</span>
+        <span class="truncate">{{ w.title }}</span>
+        <span class="shrink-0 tabular-nums text-nf-muted">{{ formatClock(w.position) }}</span>
       </button>
     </div>
 
-    <!-- 分区标题 -->
-    <div id="library" class="section-head">
-      <h2 class="section-title">{{ currentTypeName }}</h2>
-      <span class="section-count">共 {{ total }} 部</span>
+    <!-- 分区标题 + 工具条 -->
+    <div id="library" class="mb-5 flex flex-wrap items-center gap-x-[18px] gap-y-3">
+      <h2 class="relative m-0 pl-3.5 text-[21px] font-extrabold tracking-[1px] text-white">
+        <span class="absolute bottom-1 left-0 top-1 w-1 rounded-sm bg-nf-red"></span>
+        {{ currentTypeName }}
+      </h2>
+      <span class="text-[13px] text-nf-muted">共 {{ total }} 部</span>
 
-      <!-- 标签筛选：胶囊单选 -->
-      <div class="list-tools">
-        <button class="tool-select" :class="{ on: batchMode }" @click="toggleBatchMode">
+      <div class="ml-auto flex gap-2">
+        <button
+          class="h-7 rounded-[5px] border border-nf-line bg-nf-elevated px-2.5 text-[12.5px] text-[#d2d2d2] transition-colors hover:border-nf-red"
+          :class="{ 'border-nf-red bg-[rgba(229,9,20,0.2)] text-white': batchMode }"
+          @click="toggleBatchMode"
+        >
           {{ batchMode ? '退出批量' : '批量管理' }}
         </button>
-        <select v-model="query.sort" class="tool-select" @change="changeSort" title="排序方式">
+        <!-- 收藏模式没有频道面板，保留原有下拉 -->
+        <select
+          v-if="isFavMode"
+          v-model="query.sort"
+          class="h-7 cursor-pointer rounded-[5px] border border-nf-line bg-nf-elevated px-2.5 text-[12.5px] text-[#d2d2d2]"
+          title="排序方式"
+          @change="changeSort"
+        >
           <option value="updated">最近更新</option>
           <option value="created">最近上架</option>
           <option value="hot">热度优先</option>
           <option value="views">播放最多</option>
           <option value="title">标题 A-Z</option>
         </select>
-        <select v-model.number="query.collectionId" class="tool-select" @change="changeCollection" title="按合集筛选">
+        <select
+          v-if="showCollectionSelect"
+          v-model.number="query.collectionId"
+          class="h-7 cursor-pointer rounded-[5px] border border-nf-line bg-nf-elevated px-2.5 text-[12.5px] text-[#d2d2d2]"
+          title="按合集筛选"
+          @change="changeCollection"
+        >
           <option :value="0">全部合集</option>
           <option v-for="c in collections" :key="c.id" :value="c.id">{{ c.name }}（{{ c.videoCount }}）</option>
         </select>
       </div>
-      <div class="tag-filter">
+
+      <!-- 标签胶囊：仅收藏模式保留，频道模式由面板的「类型」行承担 -->
+      <div v-if="isFavMode" class="flex flex-wrap gap-2">
         <button class="chip-opt" :class="{ on: query.tagId === 0 }" @click="query.tagId = 0; onSearch()">全部</button>
         <button
           v-for="t in tags"
@@ -395,30 +453,62 @@ onMounted(() => {
     </div>
 
     <!-- 批量操作条 -->
-    <div v-if="batchMode" class="batch-bar">
-      <span>已选 <b>{{ selectedIds.length }}</b> 部</span>
-      <button class="nf-btn sm ghost" @click="batchSetPublic(true)">设为公开</button>
-      <button class="nf-btn sm ghost" @click="batchSetPublic(false)">取消公开</button>
-      <button class="nf-btn sm ghost danger" @click="batchDelete">删除所选</button>
-      <button class="nf-btn sm ghost" @click="selectedIds = []">清空选择</button>
-      <span class="batch-hint">仅对自己有权管理、且已通过审核的影片生效</span>
+    <div
+      v-if="batchMode"
+      class="mb-[18px] flex flex-wrap items-center gap-2.5 rounded-lg border border-[rgba(229,9,20,0.35)] bg-[rgba(229,9,20,0.08)] px-3.5 py-3 text-[13px] text-[#d8d8d8]"
+    >
+      <span>已选 <b class="text-white">{{ selectedIds.length }}</b> 部</span>
+      <button class="nf-btn sm ghost" @click="batchSetPublic(true)"><FaIcon :icon="ICONS.publicOn" :fixed="false" />设为公开</button>
+      <button class="nf-btn sm ghost" @click="batchSetPublic(false)"><FaIcon :icon="ICONS.publicOff" :fixed="false" />取消公开</button>
+      <button class="nf-btn sm ghost danger" @click="batchDelete"><FaIcon :icon="ICONS.remove" :fixed="false" />删除所选</button>
+      <button class="nf-btn sm ghost" @click="selectedIds = []"><FaIcon :icon="ICONS.reset" :fixed="false" />清空选择</button>
+      <span class="ml-auto text-[12px] text-nf-muted">仅对自己有权管理、且已通过审核的影片生效</span>
     </div>
 
     <!-- 加载态 -->
-    <div v-if="loading" class="grid-loading">
-      <div class="nf-loading"></div>
+    <div v-if="loading" class="flex min-h-[200px] items-center justify-center">
+      <div class="h-[34px] w-[34px] animate-spin rounded-full border-[3px] border-white/15 border-t-nf-red"></div>
     </div>
 
-    <!-- 空态：独立整块居中，不进网格 -->
-    <div v-else-if="videos.length === 0" class="empty-state">
-      <div class="empty-icon">🎬</div>
-      <div class="empty-text">暂无已通过审核的影片</div>
-      <div class="empty-sub">新上传的视频需管理员审核通过后才会出现在这里；可在右上角「审核结果」查看进度，或使用「批量导入」快速添加</div>
-      <button class="nf-btn red" @click="openForm()">＋ 新增视频</button>
+    <!-- 空态 -->
+    <div
+      v-else-if="videos.length === 0"
+      class="flex min-h-[380px] flex-col items-center justify-center gap-3 rounded-[10px] border border-dashed border-[#2e2e34] px-6 py-10 text-center"
+    >
+      <FaIcon icon="film" :fixed="false" class="text-[48px] opacity-75" />
+      <div class="text-[17px] font-bold text-nf-sub">
+        {{ hasChannelFilters && !isFavMode ? '当前筛选条件下没有匹配的影片' : '暂无已通过审核的影片' }}
+      </div>
+      <div class="mb-2.5 max-w-[620px] text-[13px] leading-relaxed text-nf-muted">
+        {{ hasChannelFilters && !isFavMode
+          ? '可点击面板右下角「重置筛选」清空条件，或切换到其它频道。地区 / 语言按标题与备注关键词匹配。'
+          : '新上传的视频需管理员审核通过后才会出现在这里；可在右上角「审核结果」查看进度，或使用「批量导入」快速添加' }}
+      </div>
+      <button v-if="hasChannelFilters && !isFavMode" class="nf-btn ghost" @click="resetChannelFilters"><FaIcon :icon="ICONS.reset" :fixed="false" />重置筛选</button>
+      <button v-else class="nf-btn red" @click="openForm()"><FaIcon :icon="ICONS.create" :fixed="false" />新增视频</button>
     </div>
 
-    <!-- 海报卡片墙 -->
-    <div v-else class="video-grid">
+    <!-- 频道页：竖版海报墙（密度随频道变化） -->
+    <div v-else-if="isChannelMode" :class="gridClass">
+      <ChannelPosterCard
+        v-for="row in videos"
+        :key="row.id"
+        :video="row"
+        :manageable="canManage(row)"
+        :selectable="batchMode"
+        :selected="isSelected(row)"
+        @select="toggleSelect"
+        @play="playVideo"
+        @detail="openDetail"
+        @edit="openForm"
+        @remove="removeVideo"
+        @toggle-fav="toggleFavoriteState"
+        @toggle-public="togglePublicState"
+      />
+    </div>
+
+    <!-- 首页 / 收藏：原有横向视频卡片 -->
+    <div v-else class="grid grid-cols-[repeat(auto-fill,320px)] justify-start gap-[18px] min-h-[160px]">
       <VideoCard
         v-for="row in videos"
         :key="row.id"
@@ -447,262 +537,20 @@ onMounted(() => {
   </main>
 
   <!-- 页脚 -->
-  <footer class="site-footer">
-    <div class="footer-brand">影库 <span>VIDEO FACTORY</span></div>
-    <div class="footer-tip">本地私人影片管理 · 数据仅存储于本机</div>
-    <div class="footer-copy">© {{ new Date().getFullYear() }} Video Manager</div>
+  <footer class="flex items-center gap-4 border-t border-white/[0.07] px-10 pb-[34px] pt-[26px] max-[900px]:flex-wrap max-[900px]:px-5">
+    <div class="text-[16px] font-extrabold tracking-[2px] text-nf-red">
+      影库 <span class="ml-1.5 text-[10px] tracking-[3px] text-nf-muted">VIDEO FACTORY</span>
+    </div>
+    <div class="text-[12.5px] text-nf-muted">本地私人影片管理 · 数据仅存储于本机</div>
+    <div class="ml-auto text-[12px] text-[#4d4d55]">© {{ new Date().getFullYear() }} Video Manager</div>
   </footer>
 
-  <!-- 弹窗组：新增/编辑 / 批量导入 / 标签类型管理（审核中心已独立为 /audit 页面） -->
+  <!-- 弹窗组：新增/编辑 / 批量导入 / 标签类型管理 / 个人中心 -->
   <VideoFormModal ref="formModal" @saved="onFormSaved" />
   <BatchImportModal
     ref="batchModal"
     @imported="() => Promise.all([fetchVideos(), loadFeatured(), loadTags(), loadTypes(), loadPendingCount(), loadNoticeCount()])"
   />
   <ManageModal ref="manageModal" @changed="onManageChanged" />
+  <PersonalCenterModal v-model="personalOpen" @logout="handleLogout" />
 </template>
-
-<style scoped>
-/* ===== 影库主体 ===== */
-.page {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 26px 40px 40px;
-}
-
-.page.no-hero {
-  padding-top: 36px;
-}
-
-/* 分区标题：红色竖条 + 标题（netflixgc 分区语言） */
-.section-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px 18px;
-  margin-bottom: 20px;
-}
-
-.section-title {
-  position: relative;
-  margin: 0;
-  padding-left: 14px;
-  font-size: 21px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  color: #fff;
-}
-
-.section-title::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 4px;
-  border-radius: 2px;
-  background: var(--nf-red);
-}
-
-.section-count {
-  font-size: 13px;
-  color: var(--nf-text-muted);
-}
-
-.list-tools {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.tool-select {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid #33333a;
-  border-radius: 5px;
-  background: #1b1b1f;
-  color: #d2d2d2;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-
-.tool-select.on {
-  border-color: var(--nf-red);
-  color: #fff;
-  background: rgba(229, 9, 20, 0.2);
-}
-
-.batch-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 18px;
-  padding: 12px 14px;
-  border: 1px solid rgba(229, 9, 20, 0.35);
-  border-radius: 8px;
-  background: rgba(229, 9, 20, 0.08);
-  font-size: 13px;
-  color: #d8d8d8;
-}
-
-.batch-bar b {
-  color: #fff;
-}
-
-.batch-hint {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--nf-text-muted);
-}
-
-.tag-filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* 继续观看 */
-.resume-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 22px;
-  padding: 12px 14px;
-  border: 1px solid #2a2a30;
-  border-radius: 8px;
-  background: #151518;
-}
-
-.resume-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--nf-red);
-  letter-spacing: 1px;
-}
-
-.resume-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 240px;
-  padding: 6px 12px;
-  border: 1px solid #33333a;
-  border-radius: 20px;
-  background: #202025;
-  color: #d8d8d8;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-
-.resume-item:hover {
-  border-color: var(--nf-red);
-  color: #fff;
-}
-
-.resume-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.resume-pos {
-  flex-shrink: 0;
-  color: var(--nf-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ===== 海报卡片墙 ===== */
-.grid-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-}
-
-.video-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 320px);
-  justify-content: start;
-  gap: 18px;
-  min-height: 160px;
-}
-
-/* ===== 空态：独立整块，水平 + 垂直双向居中 ===== */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  min-height: 380px;
-  padding: 40px 24px;
-  border: 1px dashed #2e2e34;
-  border-radius: 10px;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 48px;
-  opacity: 0.75;
-}
-
-.empty-text {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--nf-text-secondary);
-}
-
-.empty-sub {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--nf-text-muted);
-  margin-bottom: 10px;
-}
-
-/* ===== 页脚 ===== */
-.site-footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  padding: 26px 40px 34px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.footer-brand {
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  color: var(--nf-red);
-}
-
-.footer-brand span {
-  font-size: 10px;
-  letter-spacing: 3px;
-  color: var(--nf-text-muted);
-  margin-left: 6px;
-}
-
-.footer-tip {
-  font-size: 12.5px;
-  color: var(--nf-text-muted);
-}
-
-.footer-copy {
-  margin-left: auto;
-  font-size: 12px;
-  color: #4d4d55;
-}
-
-/* 响应式：小屏收紧间距 */
-@media (max-width: 900px) {
-  .page {
-    padding: 22px 20px 32px;
-  }
-
-  .tag-filter {
-    margin-left: 0;
-  }
-}
-</style>

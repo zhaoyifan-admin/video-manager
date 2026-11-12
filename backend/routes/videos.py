@@ -200,6 +200,14 @@ def list_videos():
     sort = (request.args.get("sort") or "updated").strip()  # updated/created/hot/views/title
     owner_id = request.args.get("ownerId", type=int)
     collection_id = request.args.get("collectionId", type=int)
+    # 频道页筛选（全部可缺省，旧调用方不受影响）：
+    # year 按入库年份、letter 按标题首字母、region/language 按标题或备注关键词匹配
+    # 说明：本系统未单独存储「上映地区 / 语言 / 上映年份」字段，故以已入库的文本信息做匹配，
+    #      年份取 created_at 的年份（即入库年份），避免引入新列与数据迁移。
+    year = request.args.get("year", type=int)
+    letter = (request.args.get("letter") or "").strip()
+    region = (request.args.get("region") or "").strip()
+    language = (request.args.get("language") or "").strip()
     page = max(request.args.get("page", 1, type=int) or 1, 1)
     page_size = min(max(request.args.get("pageSize", 10, type=int) or 10, 1), 100)
 
@@ -245,6 +253,22 @@ def list_videos():
     if collection_id:
         conditions.append("v.collection_id = %s")
         args.append(collection_id)
+    # ---- 频道页多行筛选：与上方条件按 AND 叠加 ----
+    if year and 1900 <= year <= 2999:
+        conditions.append("YEAR(v.created_at) = %s")
+        args.append(year)
+    if letter:
+        # 0-9 表示「数字开头」，其余仅接受单个 A-Z / 数字，防止拼入通配符
+        if letter == "0-9":
+            conditions.append("LEFT(v.title, 1) BETWEEN '0' AND '9'")
+        elif len(letter) == 1 and letter.isascii() and letter.isalnum():
+            conditions.append("v.title LIKE %s")
+            args.append(f"{letter}%")
+    for facet in (region, language):
+        if facet and len(facet) <= 50:
+            like = f"%{facet}%"
+            conditions.append("(v.title LIKE %s OR v.description LIKE %s)")
+            args.extend([like, like])
     where_sql = f"WHERE {' AND '.join(conditions)}"
 
     total = db.query(
@@ -458,7 +482,7 @@ def favorite_video(video_id):
     收藏按用户存放，多个用户收藏同一视频互不影响"""
     vis_sql, vis_args = visible_sql(g.user)
     row = db.query(
-        f"SELECT id FROM videos WHERE id = %s AND {vis_sql}",
+        f"SELECT id FROM videos v WHERE id = %s AND {vis_sql}",
         (video_id, *vis_args),
         one=True,
     )
@@ -494,7 +518,7 @@ def record_view(video_id):
     """打开播放页时记一次点击/播放（可见的视频才可计数）"""
     vis_sql, vis_args = visible_sql(g.user)
     row = db.query(
-        f"SELECT id FROM videos WHERE id = %s AND {vis_sql}",
+        f"SELECT id FROM videos v WHERE id = %s AND {vis_sql}",
         (video_id, *vis_args),
         one=True,
     )
@@ -667,7 +691,12 @@ def batch_import_videos():
                     row = cur.fetchone()
                     type_id = row["id"] if row else None
                     if type_id is None:
-                        cur.execute("INSERT INTO types (name) VALUES (%s)", (type_name,))
+                        # 批量导入自动建的类型：当作系统创建，直接发布（免审通过），对所有用户可见
+                        cur.execute(
+                            "INSERT INTO types (name, is_published, audit_status, created_by) "
+                            "VALUES (%s, 1, 1, NULL)",
+                            (type_name,),
+                        )
                         type_id = cur.lastrowid
 
                 description = str(item.get("description") or "").strip()[:1000]

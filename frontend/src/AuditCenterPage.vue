@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from './composables/icons'
+import FaIcon from './ui/FaIcon.vue'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { listVideos, auditVideo, listAuditLogs } from './api'
@@ -197,9 +199,7 @@ onMounted(load)
     <!-- 页头 -->
     <div class="audit-head">
       <button class="back-btn" title="返回影库" @click="goBack">
-        <svg viewBox="0 0 24 24" width="15" height="15">
-          <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" fill="currentColor" />
-        </svg>
+        <FaIcon :icon="ICONS.back" :fixed="false" class="text-[15px]" />
         返回
       </button>
       <h1 class="audit-title">审核中心</h1>
@@ -224,12 +224,7 @@ onMounted(load)
           <option v-for="a in LOG_ACTIONS" :key="a.value" :value="a.value">{{ a.label }}</option>
         </select>
         <div class="audit-search">
-          <svg viewBox="0 0 24 24" width="13" height="13">
-            <path
-              d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"
-              fill="currentColor"
-            />
-          </svg>
+          <FaIcon :icon="ICONS.search" :fixed="false" class="text-[13px]" />
           <input
             v-model="keyword"
             class="search-input"
@@ -279,7 +274,7 @@ onMounted(load)
               <span v-else class="bar-muted">—</span>
             </td>
             <td class="col-ops">
-              <button class="nf-btn sm ghost" @click="filterByVideo(log.videoTitle)">只看该片</button>
+              <button class="nf-btn sm ghost" @click="filterByVideo(log.videoTitle)"><FaIcon :icon="ICONS.filter" :fixed="false" />只看该片</button>
             </td>
           </tr>
         </tbody>
@@ -316,7 +311,7 @@ onMounted(load)
                   loading="lazy"
                   @error="thumbFailed[row.id] = true"
                 />
-                <div v-else class="thumb-fallback">🎬</div>
+                <div v-else class="thumb-fallback"><FaIcon icon="film" :fixed="false" /></div>
               </div>
               <div class="film-info">
                 <div class="film-title" :title="row.title">{{ row.title }}</div>
@@ -351,11 +346,11 @@ onMounted(load)
               {{ timelineId === row.id ? '收起' : '记录' }}
             </button>
             <template v-if="row.auditStatus === 0">
-              <button class="nf-btn sm pass" @click="approve(row)">通过</button>
-              <button class="nf-btn sm ghost danger" @click="openReject(row)">驳回</button>
+              <button class="nf-btn sm pass" @click="approve(row)"><FaIcon :icon="ICONS.check" :fixed="false" />通过</button>
+              <button class="nf-btn sm ghost danger" @click="openReject(row)"><FaIcon :icon="ICONS.close" :fixed="false" />驳回</button>
             </template>
             <template v-else-if="row.auditStatus === 2">
-              <button class="nf-btn sm ghost pass" @click="approve(row)">恢复通过</button>
+              <button class="nf-btn sm ghost pass" @click="approve(row)"><FaIcon :icon="ICONS.check" :fixed="false" />恢复通过</button>
             </template>
           </td>
         </tr>
@@ -384,8 +379,8 @@ onMounted(load)
               <div v-if="rejectError" class="reject-error">{{ rejectError }}</div>
               <div class="reject-actions">
                 <span class="reject-count">{{ rejectReason.length }}/500</span>
-                <button class="nf-btn sm ghost" @click="cancelReject">取消</button>
-                <button class="nf-btn sm red" @click="confirmReject(row)">确认驳回</button>
+                <button class="nf-btn sm ghost" @click="cancelReject"><FaIcon :icon="ICONS.close" :fixed="false" />取消</button>
+                <button class="nf-btn sm red" @click="confirmReject(row)"><FaIcon :icon="ICONS.close" :fixed="false" />确认驳回</button>
               </div>
             </div>
           </td>

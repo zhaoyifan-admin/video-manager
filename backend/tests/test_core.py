@@ -240,30 +240,59 @@ class CoreTest(unittest.TestCase):
         self.assertEqual(body["success"], 1)
         self.assertEqual(len(body["failed"]), 1)
 
-    # ---------- 标签权限：仅管理员可增删改并发布 ----------
-    def test_14_tag_management_admin_only(self):
+    # ---------- 标签：普通用户可提交待审，审核员审核发布，权限边界 ----------
+    def test_14_tag_review_and_visibility(self):
+        # 普通用户可提交新标签（进入待审核，不再 403）
         name = PREFIX + "标签A"
-        # 普通用户与审核员都不能增删改标签
-        self.assertEqual(self.call("post", "/api/tags", "user", expect=403, json={"name": name})["code"], 1)
-        self.assertEqual(self.call("post", "/api/tags", "reviewer", expect=403, json={"name": name})["code"], 1)
-        # 管理员创建（默认未发布）：普通用户列表不可见，管理员可见
-        data = self.ok(self.call("post", "/api/tags", "admin", json={"name": name}))
+        data = self.ok(self.call("post", "/api/tags", "user", json={"name": name}))
         tid = data["id"]
-        self.assertFalse(data["isPublished"])
-        self.assertNotIn(name, [t["name"] for t in self.ok(self.call("get", "/api/tags", "user"))])
+        self.assertEqual(data["auditStatus"], 0)
+        # 创建者本人能在列表看到（无论是否发布），且带 isMine / 发布状态供前端判断操作权限
+        mine = next(t for t in self.ok(self.call("get", "/api/tags", "user")) if t["id"] == tid)
+        self.assertTrue(mine["isMine"])
+        self.assertFalse(mine["isPublished"])
+        self.assertIsNotNone(mine["createdBy"])
+        # 审核角色能看到待审核标签
         self.assertIn(name, [t["name"] for t in self.ok(self.call("get", "/api/tags", "admin"))])
-        # 发布后普通用户可见；改名同步生效
-        self.ok(self.call("put", f"/api/tags/{tid}", "admin", json={"isPublished": True}))
-        self.assertIn(name, [t["name"] for t in self.ok(self.call("get", "/api/tags", "user"))])
-        name2 = PREFIX + "标签B"
-        self.ok(self.call("put", f"/api/tags/{tid}", "admin", json={"name": name2}))
-        # 普通用户保存视频：未发布 / 未知标签静默忽略，不自动创建
-        vid = self.make_video("user", "标签过滤", tags=[name2, PREFIX + "未知标"])
+        # 管理员创建未发布的标签：非创建者的普通用户不可见
+        hidden = self.ok(self.call("post", "/api/tags", "admin", json={"name": PREFIX + "隐藏标", "isPublished": False}))
+        self.assertNotIn(PREFIX + "隐藏标", [t["name"] for t in self.ok(self.call("get", "/api/tags", "user"))])
+        # 管理员审核通过用户提交的标签 → 发布
+        self.ok(self.call("post", f"/api/tags/{tid}/review", "admin", json={"action": "approve"}))
+        row = db.query("SELECT is_published, audit_status FROM tags WHERE id = %s", (tid,), one=True)
+        self.assertEqual(row["is_published"], 1)
+        self.assertEqual(row["audit_status"], 1)
+        # 驳回必须填理由
+        rname = PREFIX + "标签驳回"
+        rdata = self.ok(self.call("post", "/api/tags", "user", json={"name": rname}))
+        rid = rdata["id"]
+        self.assertEqual(self.call("post", f"/api/tags/{rid}/review", "admin", json={"action": "reject"}, expect=400)["code"], 1)
+        self.ok(self.call("post", f"/api/tags/{rid}/review", "admin", json={"action": "reject", "reason": "不符合规范"}))
+        rrow = db.query("SELECT audit_status, is_published, audit_reason FROM tags WHERE id = %s", (rid,), one=True)
+        self.assertEqual(rrow["audit_status"], 2)
+        self.assertEqual(rrow["is_published"], 0)
+        self.assertEqual(rrow["audit_reason"], "不符合规范")
+        # 创建者重新提交被驳回标签
+        self.ok(self.call("post", f"/api/tags/{rid}/resubmit", "user"))
+        self.assertEqual(db.query("SELECT audit_status FROM tags WHERE id = %s", (rid,), one=True)["audit_status"], 0)
+        # 普通用户不能删除已发布（他人）标签 → 403
+        self.assertEqual(self.call("delete", f"/api/tags/{tid}", "user", expect=403)["code"], 1)
+        # 创建者可删自己待审标签；管理员可删任意标签
+        self.ok(self.call("delete", f"/api/tags/{rid}", "user"))
+        self.ok(self.call("delete", f"/api/tags/{tid}", "admin"))
+        self.ok(self.call("delete", f"/api/tags/{hidden['id']}", "admin"))
+        self.assertIsNone(db.query("SELECT id FROM tags WHERE id = %s", (tid,), one=True))
+        self.assertIsNone(db.query("SELECT id FROM tags WHERE id = %s", (rid,), one=True))
+
+    # ---------- 视频标签挂接：普通用户静默忽略未知标签，管理员自动建并发布 ----------
+    def test_14b_video_tag_filter(self):
+        # 普通用户保存视频：未知标签静默忽略，不自动创建
+        vid = self.make_video("user", "标签过滤", tags=[PREFIX + "未知标"])
         rows = db.query(
             "SELECT t.name FROM video_tags vt JOIN tags t ON t.id = vt.tag_id WHERE vt.video_id = %s",
             (vid,),
         )
-        self.assertEqual([r["name"] for r in rows], [name2])
+        self.assertEqual([r["name"] for r in rows], [])
         self.assertIsNone(db.query("SELECT id FROM tags WHERE name = %s", (PREFIX + "未知标",), one=True))
         # 管理员保存视频：未知标签自动创建并发布
         vid2 = self.make_video("admin", "管理员建标", tags=[PREFIX + "管理员新标"])
@@ -272,11 +301,9 @@ class CoreTest(unittest.TestCase):
             (vid2,),
         )
         self.assertEqual(rows[0]["is_published"], 1)
-        # 清理测试标签
-        for n in (name2, PREFIX + "管理员新标"):
-            row = db.query("SELECT id FROM tags WHERE name = %s", (n,), one=True)
-            if row:
-                db.execute("DELETE FROM tags WHERE id = %s", (row["id"],))
+        row = db.query("SELECT id FROM tags WHERE name = %s", (PREFIX + "管理员新标",), one=True)
+        if row:
+            db.execute("DELETE FROM tags WHERE id = %s", (row["id"],))
 
     # ---------- 角色层级：管理员平级及以下可见/可审 ----------
     def test_15_role_hierarchy_visibility(self):
@@ -309,6 +336,130 @@ class CoreTest(unittest.TestCase):
         self.assertEqual(self.call("get", f"/api/videos/{vid_admin}", "reviewer")["code"], 0)
         # 超管：全部可见
         self.assertEqual(self.call("get", f"/api/videos/{vid_mgr}", "admin")["code"], 0)
+
+    # ---------- 影视类型：普通用户可提交待审，审核员审核发布，权限边界 ----------
+    def test_16_type_review_and_visibility(self):
+        # 清理历史残留，避免名称被占用导致重复提交被拦
+        db.execute("DELETE FROM types WHERE name LIKE %s", (PREFIX + "%",))
+        # 普通用户可提交新类型（进入待审核，不再直接发布）
+        name = PREFIX + "类型A"
+        data = self.ok(self.call("post", "/api/types", "user", json={"name": name}))
+        tid = data["id"]
+        self.assertEqual(data["auditStatus"], 0)
+        # 创建者本人能在列表看到（无论是否发布），且带 isMine / 发布状态供前端判断操作权限
+        mine = next(t for t in self.ok(self.call("get", "/api/types", "user")) if t["id"] == tid)
+        self.assertTrue(mine["isMine"])
+        self.assertFalse(mine["isPublished"])
+        self.assertIsNotNone(mine["createdBy"])
+        # 审核角色能看到待审核类型
+        self.assertIn(name, [t["name"] for t in self.ok(self.call("get", "/api/types", "admin"))])
+        # 管理员创建未发布的类型：非创建者的普通用户不可见
+        hidden = self.ok(self.call("post", "/api/types", "admin",
+                                   json={"name": PREFIX + "隐藏类", "isPublished": False}))
+        self.assertNotIn(PREFIX + "隐藏类", [t["name"] for t in self.ok(self.call("get", "/api/types", "user"))])
+        # 管理员审核通过用户提交的类型 → 发布
+        self.ok(self.call("post", f"/api/types/{tid}/review", "admin", json={"action": "approve"}))
+        row = db.query("SELECT is_published, audit_status FROM types WHERE id = %s", (tid,), one=True)
+        self.assertEqual(row["is_published"], 1)
+        self.assertEqual(row["audit_status"], 1)
+        # 驳回必须填理由
+        rname = PREFIX + "类型驳回"
+        rdata = self.ok(self.call("post", "/api/types", "user", json={"name": rname}))
+        rid = rdata["id"]
+        self.assertEqual(self.call("post", f"/api/types/{rid}/review", "admin", json={"action": "reject"}, expect=400)["code"], 1)
+        self.ok(self.call("post", f"/api/types/{rid}/review", "admin", json={"action": "reject", "reason": "不符合规范"}))
+        rrow = db.query("SELECT audit_status, is_published, audit_reason FROM types WHERE id = %s", (rid,), one=True)
+        self.assertEqual(rrow["audit_status"], 2)
+        self.assertEqual(rrow["is_published"], 0)
+        self.assertEqual(rrow["audit_reason"], "不符合规范")
+        # 创建者重新提交被驳回类型
+        self.ok(self.call("post", f"/api/types/{rid}/resubmit", "user"))
+        self.assertEqual(db.query("SELECT audit_status FROM types WHERE id = %s", (rid,), one=True)["audit_status"], 0)
+        # 普通用户不能删除已发布（他人）类型 → 403
+        self.assertEqual(self.call("delete", f"/api/types/{tid}", "user", expect=403)["code"], 1)
+        # 创建者可删自己待审类型；管理员可删任意类型
+        self.ok(self.call("delete", f"/api/types/{rid}", "user"))
+        self.ok(self.call("delete", f"/api/types/{tid}", "admin"))
+        self.ok(self.call("delete", f"/api/types/{hidden['id']}", "admin"))
+        self.assertIsNone(db.query("SELECT id FROM types WHERE id = %s", (tid,), one=True))
+        self.assertIsNone(db.query("SELECT id FROM types WHERE id = %s", (rid,), one=True))
+
+    # ---------- 频道页多行筛选（year / letter / region / language） ----------
+    def test_17_channel_filters(self):
+        base = {"scope": "gallery", "page": 1, "pageSize": 100}
+        def ids(**kw):
+            data = self.ok(self.call("get", "/api/videos", "admin", query_string={**base, **kw}))
+            return [x["id"] for x in data["items"]]
+
+        vid = self.make_video("admin", title=PREFIX + "日本频道筛选片", description="日语原声 纪录片")
+        year = db.query("SELECT YEAR(created_at) AS y FROM videos WHERE id = %s", (vid,), one=True)["y"]
+        alpha = self.make_video("admin", title="Alpha_" + PREFIX + "首字母")
+        digit = self.make_video("admin", title="2024_" + PREFIX + "数字开头")
+
+        # 地区 / 语言：分别命中标题与备注
+        self.assertIn(vid, ids(region="日本"))
+        self.assertIn(vid, ids(language="日语"))
+        self.assertEqual(ids(region="不存在的地区XYZ"), [])
+        # 年份：按入库年份，错年不命中
+        self.assertIn(vid, ids(year=year))
+        self.assertNotIn(vid, ids(year=year - 1))
+        # 首字母：A-Z 与 0-9
+        self.assertIn(alpha, ids(letter="A"))
+        self.assertNotIn(vid, ids(letter="A"))
+        self.assertIn(digit, ids(letter="0-9"))
+        # 多条件按 AND 叠加
+        self.assertIn(vid, ids(region="日本", language="日语", year=year))
+        self.assertNotIn(vid, ids(region="日本", language="英语"))
+        # 非法 letter 不生效（不报错、不误筛）
+        self.assertIn(vid, ids(letter="%%"))
+
+        for x in (vid, alpha, digit):
+            self.ok(self.call("delete", f"/api/videos/{x}", "admin"))
+
+    # ---------- 发布 / 取消发布：PUT /:id 的 isPublished，仅超管可执行 ----------
+    def test_18_publish_toggle(self):
+        # 清理历史残留，避免名称被占用
+        db.execute("DELETE FROM tags WHERE name LIKE %s", (PREFIX + "%",))
+        db.execute("DELETE FROM types WHERE name LIKE %s", (PREFIX + "%",))
+
+        tag_name = PREFIX + "发布标签"
+        tag = self.ok(self.call("post", "/api/tags", "admin",
+                                json={"name": tag_name, "isPublished": True}))
+        tid = tag["id"]
+        self.assertTrue(tag["isPublished"])
+        self.assertIn(tag_name, [t["name"] for t in self.ok(self.call("get", "/api/tags", "user"))])
+        # 审核员 / 普通用户无权改发布状态（PUT 挂 require_admin）
+        self.assertEqual(self.call("put", f"/api/tags/{tid}", "reviewer",
+                                   json={"isPublished": False}, expect=403)["code"], 1)
+        self.assertEqual(self.call("put", f"/api/tags/{tid}", "user",
+                                   json={"isPublished": False}, expect=403)["code"], 1)
+        # 超管取消发布：审核状态保持「已通过」，普通用户列表不再出现
+        data = self.ok(self.call("put", f"/api/tags/{tid}", "admin", json={"isPublished": False}))
+        self.assertFalse(data["isPublished"])
+        self.assertEqual(data["auditStatus"], 1)
+        self.assertNotIn(tag_name, [t["name"] for t in self.ok(self.call("get", "/api/tags", "user"))])
+        # 重新发布
+        data = self.ok(self.call("put", f"/api/tags/{tid}", "admin", json={"isPublished": True}))
+        self.assertTrue(data["isPublished"])
+        self.assertIn(tag_name, [t["name"] for t in self.ok(self.call("get", "/api/tags", "user"))])
+        # 待审核条目被管理员直接发布 → 同步免审通过
+        pending = self.ok(self.call("post", "/api/tags", "user", json={"name": PREFIX + "待审发布"}))
+        self.assertEqual(pending["auditStatus"], 0)
+        data = self.ok(self.call("put", f"/api/tags/{pending['id']}", "admin",
+                                 json={"isPublished": True}))
+        self.assertEqual(data["auditStatus"], 1)
+        self.assertTrue(data["isPublished"])
+        # 影视类型走同一套发布开关
+        type_name = PREFIX + "发布类型"
+        tp = self.ok(self.call("post", "/api/types", "admin",
+                               json={"name": type_name, "isPublished": True}))
+        self.ok(self.call("put", f"/api/types/{tp['id']}", "admin", json={"isPublished": False}))
+        self.assertNotIn(type_name, [t["name"] for t in self.ok(self.call("get", "/api/types", "user"))])
+        self.ok(self.call("put", f"/api/types/{tp['id']}", "admin", json={"isPublished": True}))
+        self.assertIn(type_name, [t["name"] for t in self.ok(self.call("get", "/api/types", "user"))])
+        # 清理
+        for path in (f"/api/tags/{tid}", f"/api/tags/{pending['id']}", f"/api/types/{tp['id']}"):
+            self.ok(self.call("delete", path, "admin"))
 
 
 if __name__ == "__main__":

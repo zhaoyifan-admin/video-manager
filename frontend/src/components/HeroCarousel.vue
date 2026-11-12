@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from '../composables/icons'
+import FaIcon from '../ui/FaIcon.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useCover } from '../composables/useCover'
 
@@ -78,26 +80,24 @@ onUnmounted(stopHero)
         </div>
         <!-- 热度数据：轮播正是按这两项排序选出来的 -->
         <div class="hero-stats">
-          <span class="hero-stat">▶ {{ v.viewCount || 0 }} 次播放</span>
-          <span class="hero-stat">★ {{ v.favoriteCount || 0 }} 人收藏</span>
+          <span class="hero-stat"><FaIcon :icon="ICONS.play" :fixed="false" /> {{ v.viewCount || 0 }} 次播放</span>
+          <span class="hero-stat"><FaIcon :icon="ICONS.star" :fixed="false" /> {{ v.favoriteCount || 0 }} 人收藏</span>
         </div>
         <div class="hero-actions">
           <button class="nf-btn red lg" @click="$emit('play', v)">
-            <svg viewBox="0 0 24 24" width="18" height="18">
-              <path d="M8 5.5v13l11-6.5z" fill="currentColor" />
-            </svg>
+            <FaIcon :icon="ICONS.play" :fixed="false" class="text-[18px]" />
             立即播放
           </button>
-          <button class="nf-btn ghost lg" @click="$emit('detail', v)">影片详情</button>
+          <button class="nf-btn ghost lg" @click="$emit('detail', v)"><FaIcon :icon="ICONS.detail" :fixed="false" />影片详情</button>
         </div>
       </div>
     </div>
 
     <button v-if="featured.length > 1" class="hero-arrow left" @click="heroPrev">
-      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      <FaIcon :icon="ICONS.chevronLeft" :fixed="false" class="text-[22px]" />
     </button>
     <button v-if="featured.length > 1" class="hero-arrow right" @click="heroNext">
-      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      <FaIcon :icon="ICONS.chevronRight" :fixed="false" class="text-[22px]" />
     </button>
 
     <div v-if="featured.length > 1" class="hero-dots">

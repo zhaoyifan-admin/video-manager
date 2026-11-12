@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from '../composables/icons'
+import FaIcon from '../ui/FaIcon.vue'
 import { ref, watch } from 'vue'
 import NfModal from '../ui/NfModal.vue'
 import { listDrives, listDir, makeDir } from '../api'
@@ -121,8 +123,8 @@ watch(
     <!-- 目录浏览层级 -->
     <template v-else>
       <div class="picker-crumb">
-        <button class="crumb-up" title="返回上级" @click="goUpDir">↑ 上级</button>
-        <span class="crumb-path" :title="curDir">📁 {{ curDir }}</span>
+        <button class="crumb-up" title="返回上级" @click="goUpDir"><FaIcon icon="arrow-up" :fixed="false" />上级</button>
+        <span class="crumb-path" :title="curDir"><FaIcon :icon="ICONS.folderOpen" :fixed="false" /> {{ curDir }}</span>
       </div>
       <div class="folder-list">
         <template v-if="folders.length">
@@ -148,7 +150,7 @@ watch(
           maxlength="80"
           @keyup.enter="createFolder"
         />
-        <button class="nf-btn ghost" @click="createFolder">＋ 新建</button>
+        <button class="nf-btn ghost" @click="createFolder"><FaIcon :icon="ICONS.create" :fixed="false" />新建</button>
       </div>
     </template>
 
@@ -164,8 +166,8 @@ watch(
     </div>
 
     <template #footer>
-      <button class="nf-btn ghost" @click="emit('update:modelValue', false)">取消</button>
-      <button class="nf-btn red" :disabled="!curDir" @click="confirmSaveDir">保存到此处</button>
+      <button class="nf-btn ghost" @click="emit('update:modelValue', false)"><FaIcon :icon="ICONS.close" :fixed="false" />取消</button>
+      <button class="nf-btn red" :disabled="!curDir" @click="confirmSaveDir"><FaIcon :icon="ICONS.check" :fixed="false" />保存到此处</button>
     </template>
   </NfModal>
 </template>

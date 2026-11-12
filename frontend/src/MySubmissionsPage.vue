@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from './composables/icons'
+import FaIcon from './ui/FaIcon.vue'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import VideoCard from './components/VideoCard.vue'
@@ -141,9 +143,7 @@ onMounted(() => {
     <!-- 页头 -->
     <div class="sub-head">
       <button class="back-btn" title="返回影库" @click="goBack">
-        <svg viewBox="0 0 24 24" width="15" height="15">
-          <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" fill="currentColor" />
-        </svg>
+        <FaIcon :icon="ICONS.back" :fixed="false" class="text-[15px]" />
         返回
       </button>
       <h1 class="sub-title">审核结果</h1>
@@ -153,9 +153,9 @@ onMounted(() => {
     <!-- 流程说明 -->
     <div class="flow-note">
       <span class="flow-item"><i class="dot pending"></i> 上传 → 待管理员审核</span>
-      <span class="flow-arrow">›</span>
+      <span class="flow-arrow"><FaIcon :icon="ICONS.next" :fixed="false" /></span>
       <span class="flow-item"><i class="dot pass"></i> 通过 → 进入影库，可设置是否公开</span>
-      <span class="flow-arrow">›</span>
+      <span class="flow-arrow"><FaIcon :icon="ICONS.next" :fixed="false" /></span>
       <span class="flow-item"><i class="dot reject"></i> 驳回 → 查看理由，修改后保存即重新送审</span>
     </div>
 
@@ -179,7 +179,7 @@ onMounted(() => {
     <div v-if="logVideo" class="log-panel">
       <div class="log-panel-head">
         <span class="log-panel-title">「{{ logVideo.title }}」的审核记录</span>
-        <button class="log-panel-close" @click="logVideo = null">收起 ✕</button>
+        <button class="log-panel-close" @click="logVideo = null">收起 <FaIcon :icon="ICONS.close" :fixed="false" /></button>
       </div>
       <AuditTimeline :key="logVideo.id" :video-id="logVideo.id" />
     </div>
@@ -192,7 +192,7 @@ onMounted(() => {
       <div class="empty-icon">📋</div>
       <div class="empty-text">暂无相关提交</div>
       <div class="empty-sub">上传新视频后，可在这里查看审核进度与未通过理由</div>
-      <button class="nf-btn red" @click="goBack">返回影库上传视频</button>
+      <button class="nf-btn red" @click="goBack"><FaIcon :icon="ICONS.create" :fixed="false" />返回影库上传视频</button>
     </div>
 
     <!-- 本人视频卡片墙（驳回视频带红色理由条） -->

@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from '../composables/icons'
+import FaIcon from '../ui/FaIcon.vue'
 import { computed } from 'vue'
 
 const props = defineProps({
@@ -55,7 +57,7 @@ const btnClass = (p) => (p === props.page ? btnOn : btnBase)
     </select>
     <div class="flex items-center gap-[5px]">
       <button :class="btnBase" :disabled="page <= 1" @click="emit('go-page', page - 1)">
-        ‹
+        <FaIcon :icon="ICONS.prev" :fixed="false" />
       </button>
       <template v-for="(p, i) in pageItems" :key="`${p}-${i}`">
         <span v-if="p === '…'" class="text-nf-line-hover px-0.5 select-none">…</span>
@@ -64,7 +66,7 @@ const btnClass = (p) => (p === props.page ? btnOn : btnBase)
         </button>
       </template>
       <button :class="btnBase" :disabled="page >= totalPages" @click="emit('go-page', page + 1)">
-        ›
+        <FaIcon :icon="ICONS.next" :fixed="false" />
       </button>
     </div>
   </div>

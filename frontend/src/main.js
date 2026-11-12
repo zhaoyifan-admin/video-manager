@@ -1,5 +1,10 @@
 import { createApp, h } from 'vue'
 import { createRouter, createWebHistory, RouterView } from 'vue-router'
+// Font Awesome 6 免费版：基础样式 + solid / regular 两套字形，本地依赖离线可用。
+// 项目没有用到 brands 品牌图标，刻意不引 all.min.css，避免多打包 300KB+ 无用字体。
+import '@fortawesome/fontawesome-free/css/fontawesome.min.css'
+import '@fortawesome/fontawesome-free/css/solid.min.css'
+import '@fortawesome/fontawesome-free/css/regular.min.css'
 import './theme.css'
 import App from './App.vue'
 import PlayerPage from './PlayerPage.vue'

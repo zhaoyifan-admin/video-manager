@@ -1,15 +1,19 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import FaIcon from '../ui/FaIcon.vue'
+import { ICONS } from '../composables/icons'
 import brandLogo from '../assets/logo.png'
 
 const router = useRouter()
 
-defineProps({
+const props = defineProps({
   types: { type: Array, default: () => [] },
   activeTypeId: { type: Number, default: 0 },
   favActive: { type: Boolean, default: false },
   username: { type: String, default: '' },
+  // 当前登录用户头像相对路径（空串表示未设置，回退首字母）
+  avatar: { type: String, default: '' },
   // 审核中心入口：role=admin 或 reviewer
   isAdmin: { type: Boolean, default: false },
   canAudit: { type: Boolean, default: false },
@@ -18,7 +22,16 @@ defineProps({
   noticeCount: { type: Number, default: 0 },
 })
 
-const emit = defineEmits(['select-type', 'toggle-fav', 'search', 'manage', 'batch', 'create', 'logout'])
+const emit = defineEmits(['select-type', 'toggle-fav', 'search', 'manage', 'batch', 'create', 'logout', 'open-personal'])
+
+// 头像图片地址（上传后 avatar 变化，时间戳破除浏览器缓存；加载失败回退首字母）
+const ts = ref(Date.now())
+const avatarErr = ref(false)
+const avatarSrc = computed(() => (props.avatar ? `/api/auth/avatar?t=${ts.value}` : ''))
+watch(
+  () => props.avatar,
+  () => { ts.value = Date.now(); avatarErr.value = false },
+)
 
 const keyword = ref('')
 
@@ -94,6 +107,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
       class="flex-1 min-w-0 flex items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       <a :class="catClass(activeTypeId === 0 && !favActive, false)" @click="emit('select-type', 0)">首页</a>
+      <!-- 「我的收藏」紧跟首页：频道较多时分类区横向滚动，个人入口始终在可视起点 -->
+      <a :class="catClass(favActive, true)" @click="emit('toggle-fav')">
+        <FaIcon :icon="ICONS.favorites" :fixed="false" class="mr-1 text-[12px]" />我的收藏
+      </a>
+      <!-- 频道项刻意不加图标，避免本就拥挤的频道导航被撑宽 -->
       <a
         v-for="t in types"
         :key="t.id"
@@ -102,19 +120,13 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
       >
         {{ t.name }}
       </a>
-      <a :class="catClass(favActive, true)" @click="emit('toggle-fav')">♥ 我的收藏</a>
     </nav>
 
     <div class="flex items-center gap-2 shrink-0 max-[900px]:flex-wrap">
       <div
         class="flex items-center gap-[7px] w-[218px] h-[34px] px-[11px] border border-nf-line rounded bg-nf-elevated text-[#8a8a92] transition-colors focus-within:border-[rgba(229,9,20,0.75)]"
       >
-        <svg viewBox="0 0 24 24" width="14" height="14">
-          <path
-            d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"
-            fill="currentColor"
-          />
-        </svg>
+        <FaIcon :icon="ICONS.search" :fixed="false" class="text-[13px]" />
         <input
           v-model="keyword"
           class="flex-1 min-w-0 border-none outline-none bg-transparent text-nf-text text-[13px] font-[inherit] placeholder:text-nf-line-hover"
@@ -127,6 +139,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         class="nf-btn text text-[#ffb3b8] hover:text-white"
         @click="goAudit"
       >
+        <FaIcon :icon="ICONS.audit" :fixed="false" class="text-[12px]" />
         审核中心
         <span v-if="pendingCount > 0" :class="badge('bg-nf-red')">
           {{ pendingCount > 99 ? '99+' : pendingCount }}
@@ -137,6 +150,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         title="查看我上传视频的审核结果"
         @click="goSubmissions"
       >
+        <FaIcon :icon="ICONS.submissions" :fixed="false" class="text-[12px]" />
         审核结果
         <span v-if="noticeCount > 0" :class="badge('bg-[#b8141c]')">
           {{ noticeCount > 99 ? '99+' : noticeCount }}
@@ -150,41 +164,59 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
           title="更多功能"
           @click.stop="toggleMore"
         >
-          <svg viewBox="0 0 24 24" width="16" height="16" class="block">
-            <path
-              d="M6 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"
-              fill="currentColor"
-            />
-          </svg>
+          <FaIcon :icon="ICONS.more" :fixed="false" />
         </button>
         <div
           v-if="dropdownOpen"
           class="absolute right-0 top-[calc(100%+8px)] z-[110] min-w-[160px] py-1.5 rounded-xl border border-white/10 bg-nf-elevated shadow-[0_12px_32px_rgba(0,0,0,0.55)] backdrop-blur-[10px]"
         >
-          <button v-if="isAdmin" class="nf-btn-menu" @click="closeMore(); goAdmin()">站点管理</button>
-          <button class="nf-btn-menu" @click="closeMore(); emit('manage')">标签 / 类型管理</button>
-          <button class="nf-btn-menu" @click="closeMore(); emit('batch')">批量导入</button>
+          <button v-if="isAdmin" class="nf-btn-menu" @click="closeMore(); goAdmin()">
+            <FaIcon :icon="ICONS.admin" />站点管理
+          </button>
+          <button class="nf-btn-menu" @click="closeMore(); emit('manage')">
+            <FaIcon :icon="ICONS.taxonomy" />标签 / 类型管理
+          </button>
+          <button class="nf-btn-menu" @click="closeMore(); emit('batch')">
+            <FaIcon :icon="ICONS.batch" />批量导入
+          </button>
         </div>
       </div>
 
-      <button class="nf-btn red" @click="emit('create')">＋ 新增视频</button>
+      <button class="nf-btn red" @click="emit('create')">
+        <FaIcon :icon="ICONS.create" :fixed="false" />新增视频
+      </button>
       <div class="flex items-center gap-2 py-1 pr-1.5 pl-1 rounded-[20px] bg-white/5">
-        <span
-          class="w-[26px] h-[26px] rounded-full bg-nf-red text-white text-xs font-bold flex items-center justify-center select-none"
-        >
-          {{ username.slice(0, 1).toUpperCase() }}
-        </span>
-        <span
-          class="max-w-[90px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold text-[#e5e5e5]"
-          :title="username"
-        >
-          {{ username }}
-        </span>
         <button
-          class="border-none bg-transparent text-nf-muted text-xs cursor-pointer px-1 py-0.5 rounded transition-colors hover:bg-[rgba(229,9,20,0.75)] hover:text-white"
+          class="flex items-center gap-2 border-none bg-transparent p-0 cursor-pointer select-none"
+          title="个人中心"
+          @click="emit('open-personal')"
+        >
+          <img
+            v-if="avatar && !avatarErr"
+            :src="avatarSrc"
+            class="w-[26px] h-[26px] rounded-full object-cover"
+            alt="头像"
+            @error="avatarErr = true"
+          />
+          <span
+            v-else
+            class="w-[26px] h-[26px] rounded-full bg-nf-red text-white text-xs font-bold flex items-center justify-center select-none"
+          >
+            {{ username.slice(0, 1).toUpperCase() }}
+          </span>
+          <span
+            class="max-w-[90px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold text-[#e5e5e5]"
+            :title="username"
+          >
+            {{ username }}
+          </span>
+        </button>
+        <button
+          class="flex items-center gap-1 border-none bg-transparent text-nf-muted text-xs cursor-pointer px-1 py-0.5 rounded transition-colors hover:bg-[rgba(229,9,20,0.75)] hover:text-white"
           title="退出登录"
           @click="emit('logout')"
         >
+          <FaIcon :icon="ICONS.logout" :fixed="false" />
           退出
         </button>
       </div>

@@ -31,12 +31,12 @@ def clear_login():
 
 
 def current_user():
-    """返回当前登录用户（dict：id/username/role/created_at），未登录返回 None"""
+    """返回当前登录用户（dict：id/username/role/created_at/avatar），未登录返回 None"""
     uid = session.get(SESSION_KEY)
     if not uid:
         return None
     return db.query(
-        "SELECT id, username, role, created_at FROM users WHERE id = %s", (uid,), one=True
+        "SELECT id, username, role, created_at, avatar FROM users WHERE id = %s", (uid,), one=True
     )
 
 
@@ -64,7 +64,10 @@ def can_audit(user):
 
 
 def visible_sql(user):
-    """「可观看」SQL 条件片段。列名不带表前缀（videos 是唯一含 user_id / is_public / audit_status 列的表）。
+    """「可观看」SQL 条件片段。列名统一带 videos 别名 `v.`
+
+    （videos 与 tags 现都含 audit_status 列，多表 JOIN 查询中必须加表前缀，否则列歧义；
+    为保持所有调用点一致，单表查询也已统一写成 `FROM videos v`。）
 
     - 超管 / 审核员：全部视频可见；
     - 管理员（manager）：平级及以下用户（manager / reviewer / user）的全部视频可见（含待审核），
@@ -75,10 +78,10 @@ def visible_sql(user):
         return "TRUE", []
     if role == "manager":
         return (
-            f"user_id IN (SELECT id FROM users WHERE role IN {LOWER_ROLES_SQL})",
+            f"v.user_id IN (SELECT id FROM users WHERE role IN {LOWER_ROLES_SQL})",
             [],
         )
-    return "(user_id = %s OR (is_public = 1 AND audit_status = 1))", [user["id"]]
+    return "(v.user_id = %s OR (v.is_public = 1 AND v.audit_status = 1))", [user["id"]]
 
 
 def manageable_sql(user):

@@ -15,7 +15,7 @@ bp = Blueprint("extra", __name__, url_prefix="/api")
 def _visible_video(video_id):
     vis_sql, vis_args = visible_sql(g.user)
     return db.query(
-        f"SELECT id FROM videos WHERE id = %s AND {vis_sql}",
+        f"SELECT id FROM videos v WHERE id = %s AND {vis_sql}",
         (video_id, *vis_args), one=True,
     )
 

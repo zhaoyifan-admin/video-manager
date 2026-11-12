@@ -8,13 +8,17 @@ CREATE DATABASE IF NOT EXISTS video_manager
 USE video_manager;
 
 -- 标签表：一个标签可挂到多个视频（多对多）
--- 标签由管理员统一增删改并发布；普通用户只能选用已发布的标签
+-- 普通用户可提交新标签，经管理员审核通过（audit_status=1）后才发布（is_published=1）对其他用户可见
 CREATE TABLE IF NOT EXISTS tags (
   id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
   name         VARCHAR(50) NOT NULL UNIQUE COMMENT '标签名称',
-  is_published TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否发布：0 未发布（普通用户不可见） 1 已发布',
-  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='标签表：一个标签可挂到多个视频（多对多），管理员增删改并发布';
+  is_published TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否发布：1 已发布（普通用户可见） 0 未发布',
+  audit_status TINYINT NOT NULL DEFAULT 0 COMMENT '审核状态：0 待审核 1 已通过 2 已驳回（普通用户创建的标签需审核通过才发布）',
+  audit_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '驳回理由：管理员驳回时必填，展示给标签创建者',
+  created_by   INT UNSIGNED NULL COMMENT '创建者用户 ID（管理员创建为 NULL），用于审核追踪',
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='标签表：一个标签可挂到多个视频（多对多）；普通用户可提交新标签，经管理员审核通过后发布';
 
 -- 存量库升级：补齐 is_published 列（幂等）
 -- 通过 ALTER 补列时用 DEFAULT 1，让补列瞬间存在的旧标签一次性全部置为已发布（不影响正常运行后的发布/下架操作）
@@ -31,16 +35,183 @@ PREPARE stmt FROM @ddl;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+-- 存量库升级：补齐标签审核相关列（幂等）
+SET @tag_audit = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'tags' AND column_name = 'audit_status'
+);
+SET @tag_audit_ddl = IF(
+  @tag_audit = 0,
+  "ALTER TABLE tags ADD COLUMN audit_status TINYINT NOT NULL DEFAULT 0 COMMENT '审核状态：0 待审核 1 已通过 2 已驳回' AFTER is_published",
+  'SELECT ''tags.audit_status 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @tag_audit_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @tag_reason = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'tags' AND column_name = 'audit_reason'
+);
+SET @tag_reason_ddl = IF(
+  @tag_reason = 0,
+  "ALTER TABLE tags ADD COLUMN audit_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '驳回理由：管理员驳回时必填' AFTER audit_status",
+  'SELECT ''tags.audit_reason 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @tag_reason_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @tag_by = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'tags' AND column_name = 'created_by'
+);
+SET @tag_by_ddl = IF(
+  @tag_by = 0,
+  'ALTER TABLE tags ADD COLUMN created_by INT UNSIGNED NULL COMMENT ''创建者用户 ID（管理员创建为 NULL）'' AFTER audit_reason',
+  'SELECT ''tags.created_by 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @tag_by_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @tag_upd = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'tags' AND column_name = 'updated_at'
+);
+SET @tag_upd_ddl = IF(
+  @tag_upd = 0,
+  'ALTER TABLE tags ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT ''更新时间'' AFTER created_at',
+  'SELECT ''tags.updated_at 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @tag_upd_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 存量库回填：旧标签（管理员创建、created_by 为空）补列后 audit_status 默认为 0（待审核），
+-- 但旧标签本就是已发布状态，这里统一置为已通过（1），避免“已发布却待审核”的矛盾
+UPDATE tags SET audit_status = 1 WHERE created_by IS NULL AND audit_status = 0;
+
+-- 标签审核留痕表：只追加、不修改，记录一条标签从提交到每次审核的完整轨迹
+-- action：submit 提交审核 / resubmit 重新提交 / approve 审核通过 / reject 审核驳回 / auto_approve 管理员免审通过
+CREATE TABLE IF NOT EXISTS tag_audit_logs (
+  id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
+  tag_id        INT UNSIGNED NOT NULL COMMENT '标签 ID',
+  action        VARCHAR(24) NOT NULL COMMENT '动作：submit/resubmit/approve/reject/auto_approve',
+  from_status   TINYINT NULL COMMENT '变更前审核状态（首次提交为 NULL）',
+  to_status     TINYINT NOT NULL COMMENT '变更后审核状态：0 待审核 1 已通过 2 已驳回',
+  operator_id   INT UNSIGNED NULL COMMENT '操作人 ID（系统补录为 NULL）',
+  operator_name VARCHAR(50) NOT NULL DEFAULT '' COMMENT '操作人名称快照',
+  reason        VARCHAR(500) NOT NULL DEFAULT '' COMMENT '驳回理由 / 动作说明',
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '留痕时间',
+  KEY idx_tag_time (tag_id, created_at),
+  KEY idx_created (created_at),
+  CONSTRAINT fk_tag_log_tag FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='标签审核留痕表：只追加、不修改，记录一条标签从提交到每次审核的完整轨迹';
+
 -- 影视类型表：单选分类（如 电影 / 电视剧 / 动漫）
+-- 普通用户可提交新类型，经管理员审核通过（audit_status=1）后才发布（is_published=1）对其他用户可见
 CREATE TABLE IF NOT EXISTS types (
-  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
-  name       VARCHAR(50) NOT NULL UNIQUE COMMENT '类型名称（如 电影 / 电视剧 / 动漫）',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='影视类型表：单选分类（电影 / 电视剧 / 动漫 / 纪录片 / 综艺）';
+  id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
+  name         VARCHAR(50) NOT NULL UNIQUE COMMENT '类型名称（如 电影 / 电视剧 / 动漫）',
+  is_published TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否发布：1 已发布（普通用户可见） 0 未发布',
+  audit_status TINYINT NOT NULL DEFAULT 0 COMMENT '审核状态：0 待审核 1 已通过 2 已驳回（普通用户创建的类型需审核通过才发布）',
+  audit_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '驳回理由：管理员驳回时必填，展示给类型创建者',
+  created_by   INT UNSIGNED NULL COMMENT '创建者用户 ID（管理员创建为 NULL），用于审核追踪',
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='影视类型表：单选分类（电影 / 电视剧 / 动漫 / 纪录片 / 综艺）；普通用户可提交新类型，经管理员审核通过后发布';
 
 -- 预置常用类型（已存在则跳过）
 INSERT IGNORE INTO types (name) VALUES
   ('电影'), ('电视剧'), ('动漫'), ('纪录片'), ('综艺');
+
+-- 存量库升级：补齐影视类型审核相关列（幂等）
+SET @type_pub = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'types' AND column_name = 'is_published'
+);
+SET @type_pub_ddl = IF(
+  @type_pub = 0,
+  'ALTER TABLE types ADD COLUMN is_published TINYINT(1) NOT NULL DEFAULT 1 COMMENT ''是否发布：0 未发布 1 已发布'' AFTER name',
+  'SELECT ''types.is_published 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @type_pub_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @type_audit = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'types' AND column_name = 'audit_status'
+);
+SET @type_audit_ddl = IF(
+  @type_audit = 0,
+  "ALTER TABLE types ADD COLUMN audit_status TINYINT NOT NULL DEFAULT 0 COMMENT '审核状态：0 待审核 1 已通过 2 已驳回' AFTER is_published",
+  'SELECT ''types.audit_status 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @type_audit_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @type_reason = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'types' AND column_name = 'audit_reason'
+);
+SET @type_reason_ddl = IF(
+  @type_reason = 0,
+  "ALTER TABLE types ADD COLUMN audit_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '驳回理由：管理员驳回时必填' AFTER audit_status",
+  'SELECT ''types.audit_reason 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @type_reason_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @type_by = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'types' AND column_name = 'created_by'
+);
+SET @type_by_ddl = IF(
+  @type_by = 0,
+  'ALTER TABLE types ADD COLUMN created_by INT UNSIGNED NULL COMMENT ''创建者用户 ID（管理员创建为 NULL）'' AFTER audit_reason',
+  'SELECT ''types.created_by 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @type_by_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @type_upd = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'types' AND column_name = 'updated_at'
+);
+SET @type_upd_ddl = IF(
+  @type_upd = 0,
+  'ALTER TABLE types ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT ''更新时间'' AFTER created_at',
+  'SELECT ''types.updated_at 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @type_upd_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 存量库回填：旧类型（管理员创建、created_by 为空）补列后 audit_status 默认为 0（待审核），
+-- 但旧类型本就是已发布状态，这里统一置为已通过（1），避免“已发布却待审核”的矛盾
+UPDATE types SET audit_status = 1, is_published = 1 WHERE created_by IS NULL AND audit_status = 0;
+
+-- 影视类型审核留痕表：只追加、不修改，记录一条类型从提交到每次审核的完整轨迹
+-- action：submit 提交审核 / resubmit 重新提交 / approve 审核通过 / reject 审核驳回 / auto_approve 管理员免审通过
+CREATE TABLE IF NOT EXISTS type_audit_logs (
+  id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
+  type_id       INT UNSIGNED NOT NULL COMMENT '类型 ID',
+  action        VARCHAR(24) NOT NULL COMMENT '动作：submit/resubmit/approve/reject/auto_approve',
+  from_status   TINYINT NULL COMMENT '变更前审核状态（首次提交为 NULL）',
+  to_status     TINYINT NOT NULL COMMENT '变更后审核状态：0 待审核 1 已通过 2 已驳回',
+  operator_id   INT UNSIGNED NULL COMMENT '操作人 ID（系统补录为 NULL）',
+  operator_name VARCHAR(50) NOT NULL DEFAULT '' COMMENT '操作人名称快照',
+  reason        VARCHAR(500) NOT NULL DEFAULT '' COMMENT '驳回理由 / 动作说明',
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '留痕时间',
+  KEY idx_type_time (type_id, created_at),
+  KEY idx_created (created_at),
+  CONSTRAINT fk_type_log_type FOREIGN KEY (type_id) REFERENCES types (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='影视类型审核留痕表：只追加、不修改，记录一条类型从提交到每次审核的完整轨迹';
 
 -- 用户表：登录账号，密码存哈希（pbkdf2）
 -- role 层级：user 普通用户(1) / reviewer 审核员(2) / manager 管理员(2) / admin 超级管理员(3)
@@ -49,8 +220,23 @@ CREATE TABLE IF NOT EXISTS users (
   username      VARCHAR(50) NOT NULL UNIQUE COMMENT '登录用户名',
   password_hash VARCHAR(255) NOT NULL COMMENT '密码哈希（pbkdf2）',
   role          VARCHAR(20) NOT NULL DEFAULT 'user' COMMENT '角色：user 普通用户 / reviewer 审核员 / manager 管理员 / admin 超级管理员',
+  avatar        VARCHAR(255) NOT NULL DEFAULT '' COMMENT '头像相对路径（uploads/avatars/...），空串表示未设置，前端回退为首字母',
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '注册时间'
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='用户表：登录账号，密码存哈希（pbkdf2）';
+
+-- 存量库升级：补齐 avatar 列（幂等）
+SET @avatar_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'avatar'
+);
+SET @avatar_ddl = IF(
+  @avatar_exists = 0,
+  "ALTER TABLE users ADD COLUMN avatar VARCHAR(255) NOT NULL DEFAULT '' COMMENT '头像相对路径（uploads/avatars/...），空串表示未设置' AFTER role",
+  'SELECT ''users.avatar 已存在，跳过补列'' AS msg'
+);
+PREPARE stmt FROM @avatar_ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 合集：把多部影片归到一组（剧集 / 系列），可按合集筛选
 CREATE TABLE IF NOT EXISTS collections (

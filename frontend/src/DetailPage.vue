@@ -3,12 +3,7 @@
   <div class="detail-page">
     <header class="page-header">
       <button class="back-btn" @click="goBack">
-        <svg viewBox="0 0 24 24" width="16" height="16">
-          <path
-            d="M19 11H7.83l4.88-4.88a1 1 0 1 0-1.42-1.41l-6.29 6.3a1 1 0 0 0 0 1.41l6.29 6.3a1 1 0 0 0 1.42-1.41L7.83 13H19a1 1 0 0 0 0-2z"
-            fill="currentColor"
-          />
-        </svg>
+        <FaIcon :icon="ICONS.back" :fixed="false" class="text-[16px]" />
         返回
       </button>
       <div class="page-title">影片详情</div>
@@ -19,7 +14,7 @@
       <div class="error-icon">⚠</div>
       <div class="error-title">{{ error }}</div>
       <div class="error-sub">请确认后端服务已启动、视频记录存在</div>
-      <button class="nf-btn red" @click="goBack">返回列表</button>
+      <button class="nf-btn red" @click="goBack"><FaIcon :icon="ICONS.back" :fixed="false" />返回列表</button>
     </div>
 
     <template v-else-if="video">
@@ -36,9 +31,7 @@
           <p v-if="video.description" class="backdrop-desc">{{ video.description }}</p>
           <div class="backdrop-actions">
             <button class="nf-btn red lg" @click="goPlay">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path d="M8 5.5v13l11-6.5z" fill="currentColor" />
-              </svg>
+              <FaIcon :icon="ICONS.play" :fixed="false" class="text-[18px]" />
               立即播放
             </button>
             <button
@@ -46,7 +39,8 @@
               :class="{ faved: video.isFavorite }"
               @click="toggleFav"
             >
-              {{ video.isFavorite ? '♥ 已收藏' : '♡ 收藏' }}
+              <FaIcon :icon="ICONS.fav" :variant="video.isFavorite ? 'solid' : 'regular'" :fixed="false" />
+              {{ video.isFavorite ? '已收藏' : '收藏' }}
             </button>
           </div>
         </div>
@@ -85,6 +79,8 @@
 </template>
 
 <script setup>
+import { ICONS } from './composables/icons'
+import FaIcon from './ui/FaIcon.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from './ui/toast'

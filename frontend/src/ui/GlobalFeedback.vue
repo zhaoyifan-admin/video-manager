@@ -1,4 +1,6 @@
 <script setup>
+import FaIcon from './FaIcon.vue'
+import { ICONS } from '../composables/icons'
 import { toasts, dismissToast } from './toast'
 import { confirmState, settleConfirm } from './confirm'
 import NfModal from './NfModal.vue'
@@ -19,6 +21,11 @@ const typeIcon = {
   error: 'text-nf-red',
   warning: 'text-nf-amber',
 }
+const toastIcon = {
+  success: ICONS.success,
+  error: ICONS.error,
+  warning: ICONS.warning,
+}
 </script>
 
 <template>
@@ -31,21 +38,12 @@ const typeIcon = {
         class="flex items-center gap-2 max-w-[72vw] px-4 py-[9px] rounded-md bg-nf-elevated shadow-[0_8px_28px_rgba(0,0,0,0.55)] text-[13px] leading-[1.5] text-nf-text"
         :class="typeBorder[t.type] || typeBorder.success"
       >
-        <svg v-if="t.type === 'success'" viewBox="0 0 24 24" width="15" height="15" :class="typeIcon[t.type]">
-          <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" fill="currentColor" />
-        </svg>
-        <svg v-else-if="t.type === 'error'" viewBox="0 0 24 24" width="15" height="15" :class="typeIcon[t.type]">
-          <path
-            d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
-            fill="currentColor"
-          />
-        </svg>
-        <svg v-else viewBox="0 0 24 24" width="15" height="15" :class="typeIcon[t.type] || typeIcon.warning">
-          <path
-            d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"
-            fill="currentColor"
-          />
-        </svg>
+        <FaIcon
+          :icon="toastIcon[t.type] || ICONS.warning"
+          :fixed="false"
+          :class="typeIcon[t.type] || typeIcon.warning"
+          class="text-[15px]"
+        />
         <span class="min-w-0 overflow-hidden text-ellipsis line-clamp-3">{{ t.message }}</span>
         <button
           v-if="t.action"
@@ -69,8 +67,12 @@ const typeIcon = {
       {{ confirmState.message }}
     </p>
     <template #footer>
-      <button class="nf-btn ghost" @click="settleConfirm(false)">取消</button>
-      <button class="nf-btn red" @click="settleConfirm(true)">确定</button>
+      <button class="nf-btn ghost" @click="settleConfirm(false)">
+        <FaIcon :icon="ICONS.close" :fixed="false" />取消
+      </button>
+      <button class="nf-btn red" @click="settleConfirm(true)">
+        <FaIcon :icon="ICONS.check" :fixed="false" />确定
+      </button>
     </template>
   </NfModal>
 </template>

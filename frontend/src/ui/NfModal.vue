@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from '../composables/icons'
+import FaIcon from './FaIcon.vue'
 import { computed, onUnmounted, watch } from 'vue'
 
 const props = defineProps({
@@ -63,12 +65,7 @@ window.addEventListener('keydown', onKeydown)
               title="关闭"
               @click="close"
             >
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path
-                  d="M18.3 5.71 12 12.01l-6.3-6.3-1.4 1.41 6.29 6.3-6.3 6.3 1.42 1.4 6.29-6.29 6.3 6.3 1.4-1.42-6.29-6.29 6.3-6.3z"
-                  fill="currentColor"
-                />
-              </svg>
+              <FaIcon :icon="ICONS.close" :fixed="false" class="text-[18px]" />
             </button>
           </header>
           <div class="px-[22px] py-[18px] overflow-y-auto">

@@ -76,7 +76,7 @@ def play_video(video_id):
     """流式返回本地视频文件，支持 Range 请求（可拖动进度条）；本人 / 公开视频 / 超管可播放"""
     vis_sql, vis_args = visible_sql(g.user)
     row = db.query(
-        f"SELECT file_path FROM videos WHERE id = %s AND {vis_sql}",
+        f"SELECT file_path FROM videos v WHERE id = %s AND {vis_sql}",
         (video_id, *vis_args),
         one=True,
     )
@@ -94,7 +94,7 @@ def video_thumbnail(video_id):
     """返回视频缩略图；未生成时立即返回占位图并在后台异步生成，不阻塞首屏"""
     vis_sql, vis_args = visible_sql(g.user)
     row = db.query(
-        f"SELECT file_path FROM videos WHERE id = %s AND {vis_sql}",
+        f"SELECT file_path FROM videos v WHERE id = %s AND {vis_sql}",
         (video_id, *vis_args),
         one=True,
     )
@@ -128,7 +128,7 @@ def media_info(video_id):
     """用 ffprobe 探测源文件编码，供播放失败时给出明确原因（MKV/HEVC 等浏览器不兼容）"""
     vis_sql, vis_args = visible_sql(g.user)
     row = db.query(
-        f"SELECT file_path FROM videos WHERE id = %s AND {vis_sql}",
+        f"SELECT file_path FROM videos v WHERE id = %s AND {vis_sql}",
         (video_id, *vis_args),
         one=True,
     )
@@ -177,7 +177,7 @@ def video_subtitle(video_id):
     """返回 WebVTT 字幕；.srt 会做一次轻量格式转换供浏览器 <track> 使用"""
     vis_sql, vis_args = visible_sql(g.user)
     row = db.query(
-        f"SELECT subtitle_path FROM videos WHERE id = %s AND {vis_sql}",
+        f"SELECT subtitle_path FROM videos v WHERE id = %s AND {vis_sql}",
         (video_id, *vis_args),
         one=True,
     )

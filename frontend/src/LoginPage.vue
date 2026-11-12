@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from './composables/icons'
+import FaIcon from './ui/FaIcon.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { login, register, checkUsername, getAuthConfig } from './api'
@@ -172,6 +174,7 @@ const submit = async () => {
           autocomplete="new-password"
         />
         <button class="nf-btn red lg submit" type="submit" :disabled="submitting">
+          <FaIcon :icon="isLogin() ? ICONS.login : ICONS.userAdd" :fixed="false" />
           {{ submitting ? '请稍候…' : isLogin() ? '登 录' : '注 册' }}
         </button>
       </form>

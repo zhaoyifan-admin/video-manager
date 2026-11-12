@@ -47,16 +47,54 @@ export const createUser = (username, password, role) =>
 export const checkUsername = (username) =>
   http.get('/auth/check-username', { params: { username }, _skipAuthRedirect: true })
 
-// ---------- 标签（增删改仅超管，普通用户只读已发布标签） ----------
+// 修改本人密码：传入当前密码与新密码，后端校验后更新
+export const changePassword = (oldPassword, newPassword) =>
+  http.post('/auth/change-password', { oldPassword, newPassword })
+
+// 上传头像图片（不设超时）；返回 {avatar: 相对路径}
+export const uploadAvatar = (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return http.post('/auth/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0,
+  })
+}
+
+// 当前登录用户头像图片地址（GET 端点按登录态返回本人头像）；t 用于上传后破除浏览器缓存
+export const avatarUrl = (t = Date.now()) => `/api/auth/avatar?t=${t}`
+
+// ---------- 标签（普通用户可提交新标签，经管理员审核通过后发布） ----------
 export const listTags = () => http.get('/tags')
-export const createTag = (name) => http.post('/tags', { name })
+// 新建标签：管理员传 isPublished=true 直接发布（免审通过），普通用户留空进入待审核
+export const createTag = (name, isPublished = false) =>
+  http.post('/tags', { name, isPublished })
+// 管理员修改标签：{ name?, isPublished? }；isPublished 用于发布 / 取消发布（发布未通过条目会同步免审通过）
 export const updateTag = (id, data) => http.put(`/tags/${id}`, data)
 export const deleteTag = (id) => http.delete(`/tags/${id}`)
+// 审核标签：action = 'approve' 通过 / 'reject' 驳回（驳回必带 reason）；复用视频审核权限
+export const reviewTag = (id, action, reason = '') =>
+  http.post(`/tags/${id}/review`, { action, reason })
+// 创建者或管理员重新提交被驳回的标签
+export const resubmitTag = (id) => http.post(`/tags/${id}/resubmit`)
+// 单条标签的审核留痕（创建者或审核角色可查）
+export const getTagLogs = (id) => http.get(`/tags/${id}/logs`)
 
-// ---------- 影视类型 ----------
+// ---------- 影视类型（普通用户可提交新类型，经管理员审核通过后发布） ----------
 export const listTypes = () => http.get('/types')
-export const createType = (name) => http.post('/types', { name })
+// 新建类型：管理员传 isPublished=true 直接发布（免审通过），普通用户留空进入待审核
+export const createType = (name, isPublished = false) =>
+  http.post('/types', { name, isPublished })
+// 管理员修改影视类型：{ name?, isPublished? }；发布 / 取消发布同上
+export const updateType = (id, data) => http.put(`/types/${id}`, data)
 export const deleteType = (id) => http.delete(`/types/${id}`)
+// 审核类型：action = 'approve' 通过 / 'reject' 驳回（驳回必带 reason）；复用视频审核权限
+export const reviewType = (id, action, reason = '') =>
+  http.post(`/types/${id}/review`, { action, reason })
+// 创建者或管理员重新提交被驳回的类型
+export const resubmitType = (id) => http.post(`/types/${id}/resubmit`)
+// 单条类型的审核留痕（创建者或审核角色可查）
+export const getTypeLogs = (id) => http.get(`/types/${id}/logs`)
 
 // ---------- 视频 ----------
 export const listVideos = (params) => http.get('/videos', { params })

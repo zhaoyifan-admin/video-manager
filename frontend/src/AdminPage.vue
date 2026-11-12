@@ -1,4 +1,6 @@
 <script setup>
+import { ICONS } from './composables/icons'
+import FaIcon from './ui/FaIcon.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -209,9 +211,7 @@ const removeTag = async (row) => {
   <div class="admin-page">
     <header class="admin-head">
       <button class="back-btn" @click="goBack">
-        <svg viewBox="0 0 24 24" width="15" height="15">
-          <path d="M19 11H7.83l4.88-4.88a1 1 0 1 0-1.42-1.41l-6.29 6.3a1 1 0 0 0 0 1.41l6.29 6.3a1 1 0 0 0 1.42-1.41L7.83 13H19a1 1 0 0 0 0-2z" fill="currentColor" />
-        </svg>
+        <FaIcon :icon="ICONS.back" :fixed="false" class="text-[15px]" />
         返回
       </button>
       <div>
@@ -270,7 +270,7 @@ const removeTag = async (row) => {
           <option value="reviewer">审核员</option>
           <option value="admin">超级管理员</option>
         </select>
-        <button class="nf-btn red" @click="addUser">＋ 创建账号</button>
+        <button class="nf-btn red" @click="addUser"><FaIcon :icon="ICONS.userAdd" :fixed="false" />创建账号</button>
       </div>
       <div class="table-scroll my-3">
         <table class="admin-table">
@@ -300,7 +300,7 @@ const removeTag = async (row) => {
       <div class="integrity-summary">
         <span>已检查 <b>{{ integrity.total }}</b> 条记录，</span>
         <span :class="integrity.missing.length ? 'bad' : 'good'">源文件丢失 <b>{{ integrity.missing.length }}</b> 条</span>
-        <button class="nf-btn ghost sm" @click="loadIntegrity">重新检查</button>
+        <button class="nf-btn ghost sm" @click="loadIntegrity"><FaIcon :icon="ICONS.refresh" :fixed="false" />重新检查</button>
       </div>
       <h3 class="block-title">允许的媒体根目录</h3>
       <ul class="root-list">
@@ -324,8 +324,8 @@ const removeTag = async (row) => {
       <div class="relocate-form">
         <input v-model="relocate.oldPrefix" class="nf-input" placeholder="旧前缀，如 /Volumes/OldDisk/Movies" />
         <input v-model="relocate.newPrefix" class="nf-input" placeholder="新前缀，如 /Volumes/NewDisk/Movies" />
-        <button class="nf-btn ghost" @click="doRelocate(true)">预览</button>
-        <button class="nf-btn red" @click="doRelocate(false)">应用替换</button>
+        <button class="nf-btn ghost" @click="doRelocate(true)"><FaIcon :icon="ICONS.views" :fixed="false" />预览</button>
+        <button class="nf-btn red" @click="doRelocate(false)"><FaIcon :icon="ICONS.check" :fixed="false" />应用替换</button>
       </div>
       <div v-if="relocateResult" class="relocate-result">
         {{ relocateResult.isDryRun ? '预览结果' : '替换结果' }}：匹配 {{ relocateResult.updated }} 条
@@ -338,7 +338,7 @@ const removeTag = async (row) => {
       <div class="relocate-form">
         <input v-model="newCollection.name" class="nf-input" placeholder="合集名称（如：星际穿越系列）" maxlength="100" />
         <input v-model="newCollection.description" class="nf-input" placeholder="备注（可选）" maxlength="500" />
-        <button class="nf-btn red" @click="addCollection">＋ 新建合集</button>
+        <button class="nf-btn red" @click="addCollection"><FaIcon :icon="ICONS.create" :fixed="false" />新建合集</button>
       </div>
       <div class="table-scroll my-3">
         <table class="admin-table">
@@ -346,7 +346,7 @@ const removeTag = async (row) => {
           <tbody>
             <tr v-for="c in collections" :key="c.id">
               <td>{{ c.name }}</td><td>{{ c.description || '—' }}</td><td>{{ c.videoCount }}</td>
-              <td><button class="nf-btn sm ghost danger" @click="removeCollection(c)">删除</button></td>
+              <td><button class="nf-btn sm ghost danger" @click="removeCollection(c)"><FaIcon :icon="ICONS.remove" :fixed="false" />删除</button></td>
             </tr>
             <tr v-if="!collections.length"><td colspan="4" class="muted">暂无合集</td></tr>
           </tbody>
@@ -366,7 +366,7 @@ const removeTag = async (row) => {
           maxlength="50"
           @keyup.enter="addTag"
         />
-        <button class="nf-btn red" @click="addTag">＋ 新建标签</button>
+        <button class="nf-btn red" @click="addTag"><FaIcon :icon="ICONS.create" :fixed="false" />新建标签</button>
       </div>
       <div class="table-scroll my-3">
         <table class="admin-table">
@@ -382,8 +382,8 @@ const removeTag = async (row) => {
                     @keyup.enter="confirmRenameTag"
                     @keyup.esc="cancelRenameTag"
                   />
-                  <button class="nf-btn sm red" @click="confirmRenameTag">确定</button>
-                  <button class="nf-btn sm ghost" @click="cancelRenameTag">取消</button>
+                  <button class="nf-btn sm red" @click="confirmRenameTag"><FaIcon :icon="ICONS.check" :fixed="false" />确定</button>
+                  <button class="nf-btn sm ghost" @click="cancelRenameTag"><FaIcon :icon="ICONS.close" :fixed="false" />取消</button>
                 </template>
                 <template v-else>{{ t.name }}</template>
               </td>
@@ -394,8 +394,8 @@ const removeTag = async (row) => {
                 <button class="nf-btn sm ghost" @click="toggleTagPublish(t)">
                   {{ t.isPublished ? '下架' : '发布' }}
                 </button>
-                <button class="nf-btn sm ghost" @click="startRenameTag(t)">改名</button>
-                <button class="nf-btn sm ghost danger" @click="removeTag(t)">删除</button>
+                <button class="nf-btn sm ghost" @click="startRenameTag(t)"><FaIcon :icon="ICONS.edit" :fixed="false" />改名</button>
+                <button class="nf-btn sm ghost danger" @click="removeTag(t)"><FaIcon :icon="ICONS.remove" :fixed="false" />删除</button>
               </td>
             </tr>
             <tr v-if="!tags.length"><td colspan="3" class="muted">暂无标签</td></tr>

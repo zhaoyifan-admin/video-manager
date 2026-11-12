@@ -7,8 +7,16 @@ import { showToast } from '../ui/toast'
 const query = reactive({
   keyword: '', tagId: 0, typeId: 0, favorite: 0,
   sort: 'updated', collectionId: 0, ownerId: 0,
+  // 频道页多维筛选（后端 list_videos 的可缺省参数）
+  region: '', language: '', year: 0, letter: '',
   page: 1, pageSize: 12,
 })
+
+// 频道页筛选复位：切频道或点「重置筛选」时清空，避免上一频道的条件残留
+const CHANNEL_DEFAULTS = {
+  tagId: 0, collectionId: 0, region: '', language: '', year: 0, letter: '',
+  sort: 'updated', page: 1,
+}
 const total = ref(0)
 const videos = ref([])
 const loading = ref(false)
@@ -40,17 +48,32 @@ const onSearch = () => {
 const selectType = (id) => {
   query.typeId = id
   query.favorite = 0
-  query.tagId = 0
   query.keyword = ''
-  query.page = 1
+  Object.assign(query, CHANNEL_DEFAULTS) // 每个频道从「全部」开始，且排序回到默认
   fetchVideos()
-  scrollToLibrary()
+  // 频道页头图 + 筛选面板置顶，切换后回到页首才能看到；首页沿用原来的定位到影库区
+  if (id !== 0) window.scrollTo({ top: 0, behavior: 'smooth' })
+  else scrollToLibrary()
+}
+
+// 频道面板：任一筛选行或排序 Tab 变更后重新拉取列表
+const applyFilter = (patch) => {
+  Object.assign(query, patch)
+  fetchVideos()
+}
+
+// 「重置筛选」：只清筛选条件，保留当前频道与搜索词
+const resetChannelFilters = () => {
+  Object.assign(query, CHANNEL_DEFAULTS)
+  fetchVideos()
 }
 
 // 「我的收藏」导航开关
 const toggleFavFilter = () => {
   query.favorite = query.favorite ? 0 : 1
   query.page = 1
+  // 退出收藏模式回到频道面板时，排序值可能不在面板 Tab 中，回到默认「按最新」
+  if (!query.favorite) query.sort = 'updated'
   fetchVideos()
   scrollToLibrary()
 }
@@ -101,6 +124,8 @@ export function useVideos() {
     onSearch,
     selectType,
     toggleFavFilter,
+    applyFilter,
+    resetChannelFilters,
     totalPages,
     pageItems,
     goPage,

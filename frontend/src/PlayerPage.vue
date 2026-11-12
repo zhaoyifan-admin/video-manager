@@ -4,12 +4,7 @@
     <!-- 顶栏：返回 + 标题 + 收藏 -->
     <header class="page-header">
       <button class="back-btn" @click="goBack">
-        <svg viewBox="0 0 24 24" width="16" height="16">
-          <path
-            d="M19 11H7.83l4.88-4.88a1 1 0 1 0-1.42-1.41l-6.29 6.3a1 1 0 0 0 0 1.41l6.29 6.3a1 1 0 0 0 1.42-1.41L7.83 13H19a1 1 0 0 0 0-2z"
-            fill="currentColor"
-          />
-        </svg>
+        <FaIcon :icon="ICONS.back" :fixed="false" class="text-[16px]" />
         返回
       </button>
       <div class="page-title" :title="video?.title">{{ video?.title || '加载中…' }}</div>
@@ -20,18 +15,7 @@
         :title="video.isFavorite ? '取消收藏' : '收藏'"
         @click="toggleFav"
       >
-        <svg viewBox="0 0 24 24" width="18" height="18">
-          <path
-            v-if="video.isFavorite"
-            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-            fill="currentColor"
-          />
-          <path
-            v-else
-            d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"
-            fill="currentColor"
-          />
-        </svg>
+        <FaIcon :icon="ICONS.fav" :variant="video.isFavorite ? 'solid' : 'regular'" :fixed="false" class="text-[18px]" />
       </button>
     </header>
 
@@ -40,7 +24,7 @@
       <div class="error-icon">⚠</div>
       <div class="error-title">{{ error }}</div>
       <div class="error-sub">请确认后端服务已启动、视频记录存在</div>
-      <button class="nf-btn red" @click="goBack">返回列表</button>
+      <button class="nf-btn red" @click="goBack"><FaIcon :icon="ICONS.back" :fixed="false" />返回列表</button>
     </div>
 
     <!-- 播放器与信息 -->
@@ -50,7 +34,7 @@
         <div class="link-title">外部播放链接</div>
         <div class="link-text" :title="video.filePath">{{ video.filePath }}</div>
         <div class="link-desc">该链接为网页或外站地址，浏览器无法内嵌播放，点击下方按钮跳转播放。</div>
-        <button class="nf-btn red lg" @click="openLink">打开播放链接 ↗</button>
+        <button class="nf-btn red lg" @click="openLink"><FaIcon icon="up-right-from-square" :fixed="false" />打开播放链接</button>
       </div>
 
       <div v-else class="player-wrap">
@@ -67,7 +51,7 @@
           <div v-else class="compat-detail">
             请确认源文件存在、外接硬盘已挂载，且文件路径在允许的媒体目录内；也可在「站点管理 → 存储体检」中检查。
           </div>
-          <button class="nf-btn red" @click="goBack">返回列表</button>
+          <button class="nf-btn red" @click="goBack"><FaIcon :icon="ICONS.back" :fixed="false" />返回列表</button>
         </div>
         <video
           v-else-if="videoSrc"
@@ -106,6 +90,8 @@
 </template>
 
 <script setup>
+import { ICONS } from './composables/icons'
+import FaIcon from './ui/FaIcon.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from './ui/toast'
