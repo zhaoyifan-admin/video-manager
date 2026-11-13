@@ -422,7 +422,7 @@ onMounted(load)
   padding: 0 14px 0 11px;
   border: 1px solid #333338;
   border-radius: 5px;
-  background: #1f1f23;
+  background: var(--nf-bg-elevated);
   color: var(--nf-text-secondary);
   font-size: 13px;
   cursor: pointer;
@@ -433,7 +433,7 @@ onMounted(load)
 .back-btn:hover {
   color: #fff;
   border-color: #55555c;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--nf-overlay-soft);
 }
 
 /* 页头 */
@@ -517,7 +517,7 @@ onMounted(load)
   padding: 0 11px;
   border: 1px solid #333338;
   border-radius: 5px;
-  background: #1f1f23;
+  background: var(--nf-bg-elevated);
   color: #8a8a92;
   transition: border-color 0.18s ease;
 }
@@ -532,7 +532,7 @@ onMounted(load)
   border: none;
   outline: none;
   background: transparent;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
   font-size: 13px;
   font-family: inherit;
 }
@@ -562,15 +562,15 @@ onMounted(load)
   width: 100%;
   border-collapse: collapse;
   background: rgba(24, 24, 27, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--nf-overlay-soft);
   border-radius: 10px;
   overflow: hidden;
 }
 
 .audit-table th {
   padding: 11px 14px;
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--nf-overlay-soft);
+  border-bottom: 1px solid var(--nf-overlay-soft);
   font-size: 12.5px;
   font-weight: 600;
   color: var(--nf-text-muted);
@@ -581,7 +581,7 @@ onMounted(load)
 
 .audit-table td {
   padding: 10px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--nf-overlay-soft);
   font-size: 13px;
   color: #d9d9de;
   vertical-align: middle;
@@ -596,7 +596,7 @@ onMounted(load)
 }
 
 .audit-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--nf-overlay-soft);
 }
 
 /* 影片列 */
@@ -613,7 +613,7 @@ onMounted(load)
   flex-shrink: 0;
   border-radius: 5px;
   overflow: hidden;
-  background: #101013;
+  background: var(--nf-bg-card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -638,7 +638,7 @@ onMounted(load)
 .film-title {
   font-size: 13.5px;
   font-weight: 600;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -672,7 +672,7 @@ onMounted(load)
   border-radius: 9px;
   font-size: 11.5px;
   line-height: 17px;
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--nf-overlay-soft);
   color: var(--nf-text-muted);
   white-space: nowrap;
 }
@@ -714,7 +714,7 @@ onMounted(load)
   padding: 0 10px;
   border: 1px solid #333338;
   border-radius: 5px;
-  background: #1f1f23;
+  background: var(--nf-bg-elevated);
   color: var(--nf-text-secondary);
   font-size: 12.5px;
   font-family: inherit;
@@ -733,9 +733,9 @@ onMounted(load)
 
 /* 行内审核时间线 */
 .timeline-row > td {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--nf-overlay-soft);
   padding: 14px 24px 16px !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09) !important;
+  border-bottom: 1px solid var(--nf-overlay-soft) !important;
 }
 
 /* 全局流水表格 */
@@ -763,7 +763,7 @@ onMounted(load)
   border-radius: 9px;
   font-size: 11.5px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--nf-overlay);
   color: #d9d9de;
   white-space: nowrap;
 }
@@ -850,7 +850,7 @@ onMounted(load)
 .quick-reason:hover {
   color: #fff;
   border-color: #6a6a74;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--nf-overlay-soft);
 }
 
 .reject-box .nf-textarea {

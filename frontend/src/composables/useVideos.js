@@ -5,8 +5,8 @@ import { showToast } from '../ui/toast'
 // ================= 视频查询 / 分页（全局单例状态） =================
 // typeId / tagId 均用 0 表示「全部」（后端对 0 不做过滤）
 const query = reactive({
-  keyword: '', tagId: 0, typeId: 0, favorite: 0,
-  sort: 'updated', collectionId: 0, ownerId: 0,
+  keyword: '', tagId: 0, typeId: 0, favorite: 0, wantlist: 0,
+  sort: 'updated', collectionId: 0, ownerId: 0, playlistId: 0,
   // 频道页多维筛选（后端 list_videos 的可缺省参数）
   region: '', language: '', year: 0, letter: '',
   page: 1, pageSize: 12,
@@ -14,8 +14,8 @@ const query = reactive({
 
 // 频道页筛选复位：切频道或点「重置筛选」时清空，避免上一频道的条件残留
 const CHANNEL_DEFAULTS = {
-  tagId: 0, collectionId: 0, region: '', language: '', year: 0, letter: '',
-  sort: 'updated', page: 1,
+  tagId: 0, collectionId: 0, playlistId: 0, region: '', language: '', year: 0, letter: '',
+  favorite: 0, wantlist: 0, sort: 'updated', page: 1,
 }
 const total = ref(0)
 const videos = ref([])
@@ -71,9 +71,20 @@ const resetChannelFilters = () => {
 // 「我的收藏」导航开关
 const toggleFavFilter = () => {
   query.favorite = query.favorite ? 0 : 1
+  query.wantlist = 0
   query.page = 1
   // 退出收藏模式回到频道面板时，排序值可能不在面板 Tab 中，回到默认「按最新」
   if (!query.favorite) query.sort = 'updated'
+  fetchVideos()
+  scrollToLibrary()
+}
+
+// 「想看」清单：与收藏互斥的独立视图，后端按当前用户的 video_watchlist 过滤
+const toggleWantlist = () => {
+  query.wantlist = query.wantlist ? 0 : 1
+  query.favorite = 0
+  query.page = 1
+  if (!query.wantlist) query.sort = 'updated'
   fetchVideos()
   scrollToLibrary()
 }
@@ -111,7 +122,7 @@ const changeSize = () => {
 
 // 「我的收藏」模式下取消收藏后列表需要刷新
 const refreshIfFavMode = () => {
-  if (query.favorite) fetchVideos()
+  if (query.favorite || query.wantlist) fetchVideos()
 }
 
 export function useVideos() {
@@ -124,6 +135,7 @@ export function useVideos() {
     onSearch,
     selectType,
     toggleFavFilter,
+    toggleWantlist,
     applyFilter,
     resetChannelFilters,
     totalPages,

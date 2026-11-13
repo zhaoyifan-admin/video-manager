@@ -63,7 +63,7 @@ const toastIcon = {
     width="420px"
     :overlay-z="1200"
   >
-    <p class="my-1 mx-0 text-sm leading-[1.8] text-[#d2d2d2] whitespace-pre-wrap break-all">
+    <p class="my-1 mx-0 text-sm leading-[1.8] text-[var(--nf-text-secondary)] whitespace-pre-wrap break-all">
       {{ confirmState.message }}
     </p>
     <template #footer>

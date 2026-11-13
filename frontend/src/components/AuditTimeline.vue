@@ -68,7 +68,7 @@ defineExpose({ reload: load })
   margin-bottom: 12px;
   font-size: 13px;
   font-weight: 700;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
 }
 
 .timeline-loading,
@@ -124,7 +124,7 @@ defineExpose({ reload: load })
   border-radius: 9px;
   font-size: 11.5px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--nf-overlay);
   color: #d9d9de;
   white-space: nowrap;
 }
@@ -173,7 +173,7 @@ defineExpose({ reload: load })
   margin-top: 7px;
   padding: 7px 10px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--nf-overlay-soft);
   font-size: 12.5px;
   line-height: 1.55;
   color: var(--nf-text-secondary);

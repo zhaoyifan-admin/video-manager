@@ -250,7 +250,7 @@ onMounted(() => {
   padding: 0 14px 0 11px;
   border: 1px solid #333338;
   border-radius: 5px;
-  background: #1f1f23;
+  background: var(--nf-bg-elevated);
   color: var(--nf-text-secondary);
   font-size: 13px;
   cursor: pointer;
@@ -261,7 +261,7 @@ onMounted(() => {
 .back-btn:hover {
   color: #fff;
   border-color: #55555c;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--nf-overlay-soft);
 }
 
 .sub-title {
@@ -298,7 +298,7 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 18px;
   padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--nf-overlay-soft);
   border-radius: 8px;
   background: rgba(24, 24, 27, 0.6);
   font-size: 12px;
@@ -380,7 +380,7 @@ onMounted(() => {
 .log-panel {
   margin-bottom: 20px;
   padding: 16px 20px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--nf-overlay-soft);
   border-left: 3px solid var(--nf-red);
   border-radius: 8px;
   background: rgba(24, 24, 27, 0.75);
@@ -393,7 +393,7 @@ onMounted(() => {
   gap: 12px;
   margin-bottom: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--nf-overlay-soft);
 }
 
 .log-panel-title {

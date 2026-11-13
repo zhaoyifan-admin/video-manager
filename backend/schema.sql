@@ -336,3 +336,138 @@ CREATE TABLE IF NOT EXISTS video_view_daily (
   CONSTRAINT fk_view_user  FOREIGN KEY (user_id)  REFERENCES users (id)  ON DELETE CASCADE,
   CONSTRAINT fk_view_video FOREIGN KEY (video_id) REFERENCES videos (id) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='播放计数去重表：同一用户对同一视频每天只累计一次，避免刷新刷高热度';
+
+-- 用户自建片单：与系统合集(collections)完全隔离的多对多维度。
+-- collections 是管理员单归属维度（videos.collection_id），不适合做用户片单；
+-- 本表仅记录片单元信息，视频成员关系在 playlist_videos 中。同名约束仅限同一账号。
+CREATE TABLE IF NOT EXISTS playlists (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '片单 ID',
+  user_id     INT UNSIGNED NOT NULL COMMENT '归属用户 ID',
+  name        VARCHAR(50)  NOT NULL COMMENT '片单名称',
+  description VARCHAR(500) NOT NULL DEFAULT '' COMMENT '片单简介',
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后更新时间',
+  UNIQUE KEY uk_user_name (user_id, name),
+  KEY idx_user_updated (user_id, updated_at),
+  CONSTRAINT fk_playlist_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='用户自建片单：与系统合集隔离，管理员仅能管理自己的片单';
+
+-- 片单-视频关联：多对多，带排序号（用户自定义片单内顺序）。
+-- 级联删除：片单或视频被删时关联自动清理。
+CREATE TABLE IF NOT EXISTS playlist_videos (
+  playlist_id INT UNSIGNED NOT NULL COMMENT '片单 ID',
+  video_id    INT UNSIGNED NOT NULL COMMENT '视频 ID',
+  sort_order  INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '片单内排序号（越大越靠后）',
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '加入时间',
+  PRIMARY KEY (playlist_id, video_id),
+  KEY idx_playlist_order (playlist_id, sort_order),
+  KEY idx_video (video_id),
+  CONSTRAINT fk_pv_playlist FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE,
+  CONSTRAINT fk_pv_video    FOREIGN KEY (video_id)    REFERENCES videos (id)    ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='片单-视频关联表（多对多，带排序号，级联删除）';
+
+-- ==================== 运营管理：合集审核 / 管理员操作审计 ====================
+
+-- 存量库升级：合集补齐审核相关列（幂等，与 tags / types 同范式）
+-- 普通用户可提交合集，审核通过后发布（is_published=1）才对全站可见；
+-- 超级管理员可直接发布（免审通过）或暂不发布。
+SET @col_pub_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'collections' AND column_name = 'is_published'
+);
+SET @col_pub_ddl = IF(@col_pub_exists = 0,
+  "ALTER TABLE collections ADD COLUMN is_published TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否发布：1 全站可见' AFTER description",
+  'SELECT ''collections.is_published 已存在，跳过补列'' AS msg');
+PREPARE stmt FROM @col_pub_ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_status_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'collections' AND column_name = 'audit_status'
+);
+SET @col_status_ddl = IF(@col_status_exists = 0,
+  "ALTER TABLE collections ADD COLUMN audit_status TINYINT NOT NULL DEFAULT 0 COMMENT '审核状态：0 待审核 1 已通过 2 已驳回' AFTER is_published",
+  'SELECT ''collections.audit_status 已存在，跳过补列'' AS msg');
+PREPARE stmt FROM @col_status_ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_reason_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'collections' AND column_name = 'audit_reason'
+);
+SET @col_reason_ddl = IF(@col_reason_exists = 0,
+  "ALTER TABLE collections ADD COLUMN audit_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '驳回理由，展示给创建者' AFTER audit_status",
+  'SELECT ''collections.audit_reason 已存在，跳过补列'' AS msg');
+PREPARE stmt FROM @col_reason_ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_creator_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'collections' AND column_name = 'created_by'
+);
+SET @col_creator_ddl = IF(@col_creator_exists = 0,
+  "ALTER TABLE collections ADD COLUMN created_by INT UNSIGNED NULL COMMENT '提交者用户 ID，NULL 表示系统存量数据' AFTER audit_reason",
+  'SELECT ''collections.created_by 已存在，跳过补列'' AS msg');
+PREPARE stmt FROM @col_creator_ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 存量回填：升级前已存在的合集本就是全站可见，统一置为「已通过 + 已发布」，
+-- 避免「已发布却待审核」的矛盾；新建的待审条目 created_by 非空，不会被误改。
+UPDATE collections SET audit_status = 1, is_published = 1
+WHERE created_by IS NULL AND audit_status = 0;
+
+-- 合集审核留痕表：只追加、不修改，与 tag_audit_logs / type_audit_logs 同构
+CREATE TABLE IF NOT EXISTS collection_audit_logs (
+  id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
+  collection_id   INT UNSIGNED NOT NULL COMMENT '合集 ID',
+  action          VARCHAR(24) NOT NULL COMMENT '动作：submit/resubmit/approve/reject/auto_approve',
+  from_status     TINYINT NULL COMMENT '变更前审核状态（首次提交为 NULL）',
+  to_status       TINYINT NOT NULL COMMENT '变更后审核状态：0 待审核 1 已通过 2 已驳回',
+  operator_id     INT UNSIGNED NULL COMMENT '操作人 ID',
+  operator_name   VARCHAR(50) NOT NULL DEFAULT '' COMMENT '操作人名称快照',
+  reason          VARCHAR(500) NOT NULL DEFAULT '' COMMENT '驳回理由 / 动作说明',
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '留痕时间',
+  KEY idx_collection_time (collection_id, created_at),
+  KEY idx_created (created_at),
+  CONSTRAINT fk_collection_log_collection FOREIGN KEY (collection_id)
+    REFERENCES collections (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='合集审核留痕表：只追加、不修改';
+
+-- 管理员操作审计：记录敏感管理动作（改角色 / 建账号 / 删视频 / 删合集 / 路径重定位 / 发布下架等）。
+-- 操作人与对象均存名称快照，账号或对象删除后历史仍可追溯，因此不设外键。
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
+  action          VARCHAR(32) NOT NULL COMMENT '动作：change_role/create_user/delete_video/delete_collection/relocate_videos/toggle_publish 等',
+  target_type     VARCHAR(24) NOT NULL DEFAULT '' COMMENT '对象类型：user/video/collection/tag/type/path',
+  target_id       INT UNSIGNED NULL COMMENT '对象 ID 快照',
+  target_name     VARCHAR(200) NOT NULL DEFAULT '' COMMENT '对象名称快照',
+  detail          VARCHAR(500) NOT NULL DEFAULT '' COMMENT '变更详情，如「普通用户 → 管理员」',
+  operator_id     INT UNSIGNED NULL COMMENT '操作人 ID 快照',
+  operator_name   VARCHAR(50) NOT NULL DEFAULT '' COMMENT '操作人名称快照',
+  operator_role   VARCHAR(20) NOT NULL DEFAULT '' COMMENT '操作人角色快照',
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+  KEY idx_created (created_at),
+  KEY idx_action (action),
+  KEY idx_operator (operator_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='管理员操作审计表：敏感管理动作只追加、不修改';
+
+-- ============ 第四档：影片互动（评分 / 想看清单） ============
+-- 评分与收藏相互独立：收藏表达「喜欢且已收」，评分表达量化评价，想看表达未来意向。
+-- 三者各自按用户记录，同一部影片对不同用户互不影响；影片/账号删除时级联清理。
+CREATE TABLE IF NOT EXISTS video_ratings (
+  user_id    INT UNSIGNED NOT NULL COMMENT '评价人 ID',
+  video_id   INT UNSIGNED NOT NULL COMMENT '影片 ID',
+  score      TINYINT UNSIGNED NOT NULL COMMENT '星级 1~5，由接口校验范围',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '首次评分时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最近改分时间',
+  PRIMARY KEY (user_id, video_id),
+  KEY idx_rating_video (video_id),
+  CONSTRAINT fk_rating_user  FOREIGN KEY (user_id)  REFERENCES users (id)  ON DELETE CASCADE,
+  CONSTRAINT fk_rating_video FOREIGN KEY (video_id) REFERENCES videos (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='影片评分表：按用户 1~5 星，均分与评分人数由聚合查询得出';
+
+CREATE TABLE IF NOT EXISTS video_watchlist (
+  user_id    INT UNSIGNED NOT NULL COMMENT '用户 ID',
+  video_id   INT UNSIGNED NOT NULL COMMENT '影片 ID',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '加入想看清单的时间',
+  PRIMARY KEY (user_id, video_id),
+  KEY idx_watchlist_video (video_id),
+  CONSTRAINT fk_watchlist_user  FOREIGN KEY (user_id)  REFERENCES users (id)  ON DELETE CASCADE,
+  CONSTRAINT fk_watchlist_video FOREIGN KEY (video_id) REFERENCES videos (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT='想看清单：与收藏分离的「稍后观看」意向';

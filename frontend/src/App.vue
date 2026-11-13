@@ -1,7 +1,7 @@
 <script setup>
 import { ICONS } from './composables/icons'
 import FaIcon from './ui/FaIcon.vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import SiteNav from './components/SiteNav.vue'
 import HeroCarousel from './components/HeroCarousel.vue'
@@ -13,6 +13,7 @@ import VideoFormModal from './components/VideoFormModal.vue'
 import BatchImportModal from './components/BatchImportModal.vue'
 import ManageModal from './components/ManageModal.vue'
 import PersonalCenterModal from './components/PersonalCenterModal.vue'
+import AddToPlaylistModal from './components/AddToPlaylistModal.vue'
 import { useVideos } from './composables/useVideos'
 import { useAuth } from './composables/useAuth'
 import { getPreset, DENSITY_CLASS } from './composables/channelPresets'
@@ -24,6 +25,7 @@ import {
   getUnreadCount,
   getWatchHistory,
   listCollections,
+  listPlaylists,
   toggleFavorite,
   togglePublic,
   deleteVideo,
@@ -80,6 +82,7 @@ const {
   onSearch,
   selectType,
   toggleFavFilter,
+  toggleWantlist,
   applyFilter,
   resetChannelFilters,
   goPage,
@@ -88,13 +91,53 @@ const {
 } = useVideos()
 
 // ================= 频道视图：不同频道 → 不同筛选行 / 排序 / 配色 / 海报密度 =================
-const isHome = computed(() => !query.favorite && query.typeId === 0)
+const isHome = computed(() => !query.favorite && !query.wantlist && query.typeId === 0 && !query.playlistId)
 const isFavMode = computed(() => !!query.favorite)
-const isChannelMode = computed(() => !query.favorite && query.typeId !== 0)
+const isWantMode = computed(() => !!query.wantlist)
+const isChannelMode = computed(() => !query.favorite && !query.wantlist && query.typeId !== 0 && !query.playlistId)
+// 个人片单查看模式：仅本人片单可进入（后端按归属校验）
+const isPlaylistMode = computed(() => !query.favorite && !query.wantlist && query.playlistId !== 0)
 const activeChannel = computed(() => types.value.find((t) => t.id === query.typeId))
 const channelName = computed(() => activeChannel.value?.name || '全部影片')
 const preset = computed(() => getPreset(isHome.value ? '' : channelName.value))
 const gridClass = computed(() => DENSITY_CLASS[preset.value.density] || DENSITY_CLASS.mid)
+// 首页 / 收藏：断点式列数（替代固定 320px auto-fill，窄屏不再挤压或溢出）
+const homeGridClass =
+  'grid grid-cols-1 gap-[18px] min-h-[160px] min-[520px]:grid-cols-2 min-[820px]:grid-cols-3 min-[1180px]:grid-cols-4'
+// 骨架屏数量跟随当前每页条数，最多 12 个，避免长列表生成过多占位
+const skeletonCount = computed(() => Math.min(query.pageSize || 12, 12))
+// 卡片错峰入场：序号上限 10，单级 45ms，总时长控制在 0.45s 内
+const enterDelay = (i) => `${Math.min(i, 10) * 45}ms`
+// 进入片单模式时拉取片单名（用于标题与横幅）
+const playlistName = ref('')
+const openPlaylist = async (id) => {
+  query.favorite = 0
+  query.wantlist = 0
+  query.typeId = 0
+  query.tagId = 0
+  query.keyword = ''
+  query.playlistId = id
+  query.page = 1
+  try {
+    const data = await listPlaylists()
+    const found = (data.items || []).find((p) => p.id === id)
+    playlistName.value = found ? found.name : ''
+  } catch {
+    playlistName.value = ''
+  }
+  fetchVideos()
+  scrollToLibrary()
+}
+const exitPlaylist = () => {
+  query.playlistId = 0
+  query.page = 1
+  fetchVideos()
+  scrollToLibrary()
+}
+// 片单模式下，加入/移出视频后刷新列表
+const onPlaylistChanged = () => {
+  if (query.playlistId) fetchVideos()
+}
 // 面板已提供「合集」行的频道，不再重复显示旧版合集下拉
 const showCollectionSelect = computed(
   () => isFavMode.value || !preset.value.rows.includes('collection'),
@@ -123,9 +166,19 @@ const onNavSearch = (keyword) => {
 
 const currentTypeName = computed(() => {
   if (query.favorite) return '我的收藏'
+  if (query.wantlist) return '想看清单'
+  if (query.playlistId) return `片单：${playlistName.value || '我的片单'}`
   const t = types.value.find((t) => t.id === query.typeId)
   return t ? t.name : '全部影片'
 })
+
+// 列表卡片「加入片单」入口：打开弹窗并传入视频 ID
+const playlistModalOpen = ref(false)
+const playlistVideoId = ref(0)
+const openAddPlaylist = (row) => {
+  playlistVideoId.value = row.id
+  playlistModalOpen.value = true
+}
 
 // ================= 播放 / 详情：两个独立动作 =================
 const playVideo = (row) => router.push({ name: 'play', params: { id: row.id } })
@@ -193,7 +246,8 @@ const onFormSaved = async () => {
 }
 
 const onManageChanged = async () => {
-  await Promise.all([loadTags(), loadTypes()])
+  // 工作台里合集通过 / 发布后，前台筛选下拉需要同步刷新
+  await Promise.all([loadTags(), loadTypes(), loadCollections()])
 }
 
 // ================= 管理员审核 =================
@@ -225,7 +279,10 @@ const watchHistory = ref([])
 
 const loadCollections = async () => {
   try {
+    // 合集已接入审核模型：只有「已通过 + 已发布」的合集才进入筛选下拉，
+    // 与标签 / 类型一致，避免待审或未发布条目泄漏到前台
     collections.value = (await listCollections()).items
+      .filter((c) => c.isPublished !== false && c.auditStatus === 1)
   } catch {
     // 合集加载失败不影响主列表
   }
@@ -319,7 +376,17 @@ const formatClock = (seconds) => {
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
 }
 
+// ================= 回到顶部：长列表滚动超过一屏后浮出 =================
+const showToTop = ref(false)
+// 阈值取 300px：短列表（如仅几部影片）也能触发，不做固定大屏假设
+const onScroll = () => { showToTop.value = window.scrollY > 300 }
+const scrollToTop = () => {
+  window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+}
+
 onMounted(() => {
+  window.addEventListener('scroll', onScroll, { passive: true })
+  onScroll()
   loadTags().catch((e) => showToast.error(e.message))
   loadTypes().catch((e) => showToast.error(e.message))
   fetchVideos()
@@ -329,6 +396,7 @@ onMounted(() => {
   loadCollections()
   loadWatchHistory()
 })
+onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
 </script>
 
 <template>
@@ -337,6 +405,7 @@ onMounted(() => {
     :types="types"
     :active-type-id="query.typeId"
     :fav-active="!!query.favorite"
+    :want-active="!!query.wantlist"
     :username="user?.username || ''"
     :avatar="user?.avatar || ''"
     :is-admin="isSuperAdmin"
@@ -345,6 +414,7 @@ onMounted(() => {
     :notice-count="noticeCount"
     @select-type="selectType"
     @toggle-fav="toggleFavFilter"
+    @toggle-want="toggleWantlist"
     @search="onNavSearch"
     @manage="manageModal?.open()"
     @batch="batchModal?.open()"
@@ -363,7 +433,7 @@ onMounted(() => {
   >
     <!-- 频道筛选面板：首页为简版（仅频道切换 + 排序），具体频道为专属完整版 -->
     <ChannelFilter
-      v-if="!isFavMode"
+      v-if="!isFavMode && !isWantMode && !isPlaylistMode"
       :preset="preset"
       :channel-name="channelName"
       :channels="types"
@@ -380,13 +450,13 @@ onMounted(() => {
     <!-- 继续观看：仅首页展示 -->
     <div
       v-if="isHome && watchHistory.length"
-      class="mb-[22px] flex flex-wrap items-center gap-2.5 rounded-lg border border-[#2a2a30] bg-[#151518] px-3.5 py-3"
+      class="nf-scroll-x mb-[22px] flex items-center gap-2.5 overflow-x-auto rounded-lg border border-[#2a2a30] bg-[var(--nf-bg-card)] px-3.5 py-3"
     >
-      <span class="text-[13px] font-bold tracking-[1px] text-nf-red">继续观看</span>
+      <span class="shrink-0 text-[13px] font-bold tracking-[1px] text-nf-red">继续观看</span>
       <button
         v-for="w in watchHistory"
         :key="w.id"
-        class="inline-flex max-w-[240px] items-center gap-2 rounded-[20px] border border-nf-line bg-[#202025] px-3 py-1.5 text-[12.5px] text-[#d8d8d8] transition-colors hover:border-nf-red hover:text-white"
+        class="inline-flex max-w-[240px] shrink-0 items-center gap-2 rounded-[20px] border border-nf-line bg-[#202025] px-3 py-1.5 text-[12.5px] text-[var(--nf-text-secondary)] transition-colors hover:border-nf-red hover:text-nf-text"
         :title="`从 ${formatClock(w.position)} 继续播放「${w.title}」`"
         @click="playVideo({ id: w.id })"
       >
@@ -397,7 +467,7 @@ onMounted(() => {
 
     <!-- 分区标题 + 工具条 -->
     <div id="library" class="mb-5 flex flex-wrap items-center gap-x-[18px] gap-y-3">
-      <h2 class="relative m-0 pl-3.5 text-[21px] font-extrabold tracking-[1px] text-white">
+      <h2 class="relative m-0 pl-3.5 text-[21px] font-extrabold tracking-[1px] text-nf-text">
         <span class="absolute bottom-1 left-0 top-1 w-1 rounded-sm bg-nf-red"></span>
         {{ currentTypeName }}
       </h2>
@@ -405,17 +475,17 @@ onMounted(() => {
 
       <div class="ml-auto flex gap-2">
         <button
-          class="h-7 rounded-[5px] border border-nf-line bg-nf-elevated px-2.5 text-[12.5px] text-[#d2d2d2] transition-colors hover:border-nf-red"
-          :class="{ 'border-nf-red bg-[rgba(229,9,20,0.2)] text-white': batchMode }"
+          class="h-7 rounded-[5px] border border-nf-line bg-nf-elevated px-2.5 text-[12.5px] text-nf-sub transition-colors hover:border-nf-red"
+          :class="{ 'border-nf-red bg-[rgba(229,9,20,0.2)] text-nf-red': batchMode }"
           @click="toggleBatchMode"
         >
           {{ batchMode ? '退出批量' : '批量管理' }}
         </button>
-        <!-- 收藏模式没有频道面板，保留原有下拉 -->
+        <!-- 收藏 / 想看模式没有频道面板，保留原有下拉 -->
         <select
-          v-if="isFavMode"
+          v-if="isFavMode || isWantMode"
           v-model="query.sort"
-          class="h-7 cursor-pointer rounded-[5px] border border-nf-line bg-nf-elevated px-2.5 text-[12.5px] text-[#d2d2d2]"
+          class="h-7 cursor-pointer rounded-[5px] border border-nf-line bg-nf-elevated px-2.5 text-[12.5px] text-nf-sub"
           title="排序方式"
           @change="changeSort"
         >
@@ -423,12 +493,13 @@ onMounted(() => {
           <option value="created">最近上架</option>
           <option value="hot">热度优先</option>
           <option value="views">播放最多</option>
+          <option value="rating">评分最高</option>
           <option value="title">标题 A-Z</option>
         </select>
         <select
           v-if="showCollectionSelect"
           v-model.number="query.collectionId"
-          class="h-7 cursor-pointer rounded-[5px] border border-nf-line bg-nf-elevated px-2.5 text-[12.5px] text-[#d2d2d2]"
+          class="h-7 cursor-pointer rounded-[5px] border border-nf-line bg-nf-elevated px-2.5 text-[12.5px] text-nf-sub"
           title="按合集筛选"
           @change="changeCollection"
         >
@@ -437,8 +508,8 @@ onMounted(() => {
         </select>
       </div>
 
-      <!-- 标签胶囊：仅收藏模式保留，频道模式由面板的「类型」行承担 -->
-      <div v-if="isFavMode" class="flex flex-wrap gap-2">
+      <!-- 标签胶囊：仅个人视图保留，频道模式由面板的「标签」行承担 -->
+      <div v-if="isFavMode || isWantMode" class="flex flex-wrap gap-2">
         <button class="chip-opt" :class="{ on: query.tagId === 0 }" @click="query.tagId = 0; onSearch()">全部</button>
         <button
           v-for="t in tags"
@@ -455,9 +526,9 @@ onMounted(() => {
     <!-- 批量操作条 -->
     <div
       v-if="batchMode"
-      class="mb-[18px] flex flex-wrap items-center gap-2.5 rounded-lg border border-[rgba(229,9,20,0.35)] bg-[rgba(229,9,20,0.08)] px-3.5 py-3 text-[13px] text-[#d8d8d8]"
+      class="mb-[18px] flex flex-wrap items-center gap-2.5 rounded-lg border border-[rgba(229,9,20,0.35)] bg-[rgba(229,9,20,0.08)] px-3.5 py-3 text-[13px] text-nf-sub"
     >
-      <span>已选 <b class="text-white">{{ selectedIds.length }}</b> 部</span>
+      <span>已选 <b class="text-nf-text">{{ selectedIds.length }}</b> 部</span>
       <button class="nf-btn sm ghost" @click="batchSetPublic(true)"><FaIcon :icon="ICONS.publicOn" :fixed="false" />设为公开</button>
       <button class="nf-btn sm ghost" @click="batchSetPublic(false)"><FaIcon :icon="ICONS.publicOff" :fixed="false" />取消公开</button>
       <button class="nf-btn sm ghost danger" @click="batchDelete"><FaIcon :icon="ICONS.remove" :fixed="false" />删除所选</button>
@@ -465,9 +536,22 @@ onMounted(() => {
       <span class="ml-auto text-[12px] text-nf-muted">仅对自己有权管理、且已通过审核的影片生效</span>
     </div>
 
-    <!-- 加载态 -->
-    <div v-if="loading" class="flex min-h-[200px] items-center justify-center">
-      <div class="h-[34px] w-[34px] animate-spin rounded-full border-[3px] border-white/15 border-t-nf-red"></div>
+    <!-- 加载态：按当前视图形状渲染骨架屏，避免白屏 + 单调转圈 -->
+    <div
+      v-if="loading"
+      :class="isChannelMode ? gridClass : homeGridClass"
+      aria-busy="true"
+      aria-label="正在加载影片"
+    >
+      <div
+        v-for="n in skeletonCount"
+        :key="n"
+        class="nf-skeleton flex flex-col justify-end gap-2.5 p-3.5"
+        :class="isChannelMode ? 'aspect-[2/3]' : 'h-[420px] max-[600px]:h-[300px]'"
+      >
+        <div class="nf-skeleton-bar h-[13px] w-3/5"></div>
+        <div class="nf-skeleton-bar h-[10px] w-2/5"></div>
+      </div>
     </div>
 
     <!-- 空态 -->
@@ -477,22 +561,27 @@ onMounted(() => {
     >
       <FaIcon icon="film" :fixed="false" class="text-[48px] opacity-75" />
       <div class="text-[17px] font-bold text-nf-sub">
-        {{ hasChannelFilters && !isFavMode ? '当前筛选条件下没有匹配的影片' : '暂无已通过审核的影片' }}
+        {{ isWantMode ? '想看清单还是空的' : hasChannelFilters && !isFavMode ? '当前筛选条件下没有匹配的影片' : '暂无已通过审核的影片' }}
       </div>
       <div class="mb-2.5 max-w-[620px] text-[13px] leading-relaxed text-nf-muted">
-        {{ hasChannelFilters && !isFavMode
+        {{ isWantMode
+          ? '在影片详情页点击「想看」即可加入清单，之后可在这里集中查看与播放。'
+          : hasChannelFilters && !isFavMode
           ? '可点击面板右下角「重置筛选」清空条件，或切换到其它频道。地区 / 语言按标题与备注关键词匹配。'
           : '新上传的视频需管理员审核通过后才会出现在这里；可在右上角「审核结果」查看进度，或使用「批量导入」快速添加' }}
       </div>
-      <button v-if="hasChannelFilters && !isFavMode" class="nf-btn ghost" @click="resetChannelFilters"><FaIcon :icon="ICONS.reset" :fixed="false" />重置筛选</button>
+      <button v-if="isWantMode" class="nf-btn ghost" @click="toggleWantlist()"><FaIcon :icon="ICONS.back" :fixed="false" />返回影库</button>
+      <button v-else-if="hasChannelFilters && !isFavMode" class="nf-btn ghost" @click="resetChannelFilters"><FaIcon :icon="ICONS.reset" :fixed="false" />重置筛选</button>
       <button v-else class="nf-btn red" @click="openForm()"><FaIcon :icon="ICONS.create" :fixed="false" />新增视频</button>
     </div>
 
     <!-- 频道页：竖版海报墙（密度随频道变化） -->
     <div v-else-if="isChannelMode" :class="gridClass">
       <ChannelPosterCard
-        v-for="row in videos"
+        v-for="(row, i) in videos"
         :key="row.id"
+        class="nf-enter"
+        :style="{ '--nf-delay': enterDelay(i) }"
         :video="row"
         :manageable="canManage(row)"
         :selectable="batchMode"
@@ -504,14 +593,17 @@ onMounted(() => {
         @remove="removeVideo"
         @toggle-fav="toggleFavoriteState"
         @toggle-public="togglePublicState"
+        @add-playlist="openAddPlaylist"
       />
     </div>
 
     <!-- 首页 / 收藏：原有横向视频卡片 -->
-    <div v-else class="grid grid-cols-[repeat(auto-fill,320px)] justify-start gap-[18px] min-h-[160px]">
+    <div v-else :class="homeGridClass">
       <VideoCard
-        v-for="row in videos"
+        v-for="(row, i) in videos"
         :key="row.id"
+        class="nf-enter"
+        :style="{ '--nf-delay': enterDelay(i) }"
         :video="row"
         :manageable="canManage(row)"
         :show-owner="row.ownerId !== user?.id"
@@ -523,6 +615,7 @@ onMounted(() => {
         @remove="removeVideo"
         @toggle-fav="toggleFavoriteState"
         @toggle-public="togglePublicState"
+        @add-playlist="openAddPlaylist"
       />
     </div>
 
@@ -535,6 +628,24 @@ onMounted(() => {
       @size-change="(s) => { query.pageSize = s; changeSize() }"
     />
   </main>
+
+    <!-- 个人片单模式横幅：提示当前正在查看某个片单，可一键退出 -->
+    <div
+      v-if="isPlaylistMode"
+      class="mx-auto max-w-[1400px] px-10 pb-3 pt-4 max-[900px]:px-5"
+    >
+      <div class="flex flex-wrap items-center gap-3 rounded-lg border border-[rgba(229,9,20,0.35)] bg-[rgba(229,9,20,0.08)] px-4 py-3">
+        <FaIcon :icon="ICONS.playlist" :fixed="false" class="text-[18px] text-nf-red" />
+        <span class="text-[14px] font-bold text-nf-text">{{ playlistName || '我的片单' }}</span>
+        <span class="text-[12.5px] text-nf-muted">片单内的影片</span>
+        <button
+          class="ml-auto nf-btn ghost"
+          @click="exitPlaylist"
+        >
+          <FaIcon :icon="ICONS.close" :fixed="false" />退出片单
+        </button>
+      </div>
+    </div>
 
   <!-- 页脚 -->
   <footer class="flex items-center gap-4 border-t border-white/[0.07] px-10 pb-[34px] pt-[26px] max-[900px]:flex-wrap max-[900px]:px-5">
@@ -552,5 +663,19 @@ onMounted(() => {
     @imported="() => Promise.all([fetchVideos(), loadFeatured(), loadTags(), loadTypes(), loadPendingCount(), loadNoticeCount()])"
   />
   <ManageModal ref="manageModal" @changed="onManageChanged" />
-  <PersonalCenterModal v-model="personalOpen" @logout="handleLogout" />
+  <PersonalCenterModal v-model="personalOpen" @logout="handleLogout" @view-playlist="openPlaylist" />
+  <AddToPlaylistModal ref="playlistModal" v-model="playlistModalOpen" :video-id="playlistVideoId" @changed="onPlaylistChanged" />
+
+  <!-- 回到顶部：长列表滚动超过一屏后浮出 -->
+  <Transition name="nf-pop">
+    <button
+      v-if="showToTop"
+      class="nf-to-top"
+      title="回到顶部"
+      aria-label="回到顶部"
+      @click="scrollToTop"
+    >
+      <FaIcon :icon="ICONS.chevronUp" :fixed="false" class="text-[15px]" />
+    </button>
+  </Transition>
 </template>

@@ -11,6 +11,15 @@
       <button
         v-if="video"
         class="fav-btn"
+        :class="{ active: castOpen }"
+        title="一键投屏"
+        @click="castOpen = !castOpen"
+      >
+        <FaIcon :icon="ICONS.cast" :fixed="false" class="text-[18px]" />
+      </button>
+      <button
+        v-if="video"
+        class="fav-btn"
         :class="{ active: video.isFavorite }"
         :title="video.isFavorite ? '取消收藏' : '收藏'"
         @click="toggleFav"
@@ -29,6 +38,37 @@
 
     <!-- 播放器与信息 -->
     <template v-else-if="video">
+      <!-- 一键投屏：优先调用浏览器远程播放 API，无设备时降级为可复制的播放链接 -->
+      <div v-if="castOpen" class="mb-4 rounded-xl border border-nf-line bg-nf-elevated px-5 py-4">
+        <div class="mb-2 flex items-center gap-2 text-[15px] font-bold text-nf-text">
+          <FaIcon :icon="ICONS.cast" :fixed="false" class="text-nf-red" />一键投屏
+        </div>
+        <p class="mb-3 text-[12.5px] leading-relaxed text-nf-sub">
+          浏览器检测到同网投屏设备时可直接推送播放；也可复制下方链接，在电视或另一台设备的浏览器里打开。
+        </p>
+        <button class="nf-btn red mb-3" @click="promptCast">
+          <FaIcon :icon="ICONS.cast" :fixed="false" />搜索投屏设备
+        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            id="cast-url"
+            class="nf-input min-w-[220px] flex-1"
+            :value="castUrl"
+            readonly
+            aria-label="投屏播放链接"
+          />
+          <button class="nf-btn ghost shrink-0" @click="copyCastUrl">
+            <FaIcon :icon="ICONS.copy" :fixed="false" />复制链接
+          </button>
+          <button class="nf-btn ghost shrink-0" @click="openCastLink">
+            <FaIcon icon="up-right-from-square" :fixed="false" />新窗口打开
+          </button>
+        </div>
+        <p class="mt-3 text-[11.5px] leading-relaxed text-nf-muted">
+          本地文件走本站流式接口，跨设备打开需先在本站登录；外链视频则直接跳转到原始地址。
+        </p>
+      </div>
+
       <!-- 外链且非直链视频文件：提供直跳按钮 -->
       <div v-if="!isDirectFile" class="link-panel">
         <div class="link-title">外部播放链接</div>
@@ -130,6 +170,45 @@ const isDirectFile = computed(() => !isExternalLink.value || DIRECT_FILE_RE.test
 const openLink = () => {
   if (video.value?.filePath) window.open(video.value.filePath, '_blank')
 }
+
+// ================= 一键投屏 =================
+// 优先用标准 Remote Playback API（Chrome/Edge 可唤起 Chromecast 等本机可见设备）；
+// 浏览器不支持或没有设备时，降级为「同源播放链接」供电视端浏览器直接打开。
+const castOpen = ref(false)
+const castUrl = computed(() => {
+  const src = videoSrc.value
+  if (!src) return ''
+  return /^https?:\/\//.test(src) ? src : `${window.location.origin}${src}`
+})
+
+const promptCast = async () => {
+  const el = playerEl.value
+  if (!el?.remote?.prompt) {
+    showToast.error('当前浏览器不支持系统投屏，请改用下方播放链接')
+    return
+  }
+  try {
+    await el.remote.prompt()
+    showToast('已发起投屏，请在设备上确认')
+  } catch {
+    showToast.error('未找到可用投屏设备，可使用下方链接在电视端打开')
+  }
+}
+
+const copyCastUrl = async () => {
+  try {
+    await navigator.clipboard.writeText(castUrl.value)
+    showToast('投屏链接已复制')
+  } catch {
+    // 非安全上下文里 Clipboard API 不可用：退回选中输入框 + 传统复制
+    const input = document.getElementById('cast-url')
+    input?.select()
+    document.execCommand?.('copy')
+    showToast('投屏链接已复制')
+  }
+}
+
+const openCastLink = () => window.open(castUrl.value, '_blank')
 
 const load = async () => {
   error.value = ''
@@ -252,8 +331,8 @@ onMounted(async () => {
   padding: 0 15px;
   border: none;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #f5f5f5;
+  background: var(--nf-overlay);
+  color: var(--nf-text-primary);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -262,7 +341,7 @@ onMounted(async () => {
 }
 
 .back-btn:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--nf-overlay-strong);
 }
 
 .page-title {
@@ -281,8 +360,8 @@ onMounted(async () => {
   height: 36px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  color: #b3b3b3;
+  background: var(--nf-overlay);
+  color: var(--nf-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -318,7 +397,7 @@ onMounted(async () => {
 .error-title {
   font-size: 16px;
   font-weight: 700;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
 }
 
 .error-sub {
@@ -369,18 +448,18 @@ onMounted(async () => {
 .compat-title {
   font-size: 17px;
   font-weight: 700;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
 }
 
 .compat-detail {
   max-width: 720px;
   font-size: 13.5px;
   line-height: 1.9;
-  color: #b3b3b3;
+  color: var(--nf-text-secondary);
 }
 
 .compat-detail b {
-  color: #e5e5e5;
+  color: var(--nf-text-primary);
 }
 
 .meta-panel {
@@ -394,8 +473,8 @@ onMounted(async () => {
 .meta-chip {
   padding: 2px 12px;
   border-radius: 3px;
-  background: #26262b;
-  color: #e5e5e5;
+  background: var(--nf-bg-elevated);
+  color: var(--nf-text-primary);
   font-size: 13px;
   line-height: 22px;
 }
@@ -423,7 +502,7 @@ onMounted(async () => {
   margin: 14px 0 0;
   font-size: 14px;
   line-height: 1.8;
-  color: #b3b3b3;
+  color: var(--nf-text-secondary);
   white-space: pre-wrap;
 }
 
@@ -439,7 +518,7 @@ onMounted(async () => {
 .link-title {
   font-size: 16px;
   font-weight: 700;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
   margin-bottom: 12px;
 }
 
@@ -455,7 +534,7 @@ onMounted(async () => {
 
 .link-desc {
   font-size: 13px;
-  color: #b3b3b3;
+  color: var(--nf-text-secondary);
   margin-bottom: 20px;
 }
 

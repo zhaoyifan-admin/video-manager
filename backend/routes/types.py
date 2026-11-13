@@ -11,6 +11,7 @@
 from flask import Blueprint, g, request
 
 import db
+from admin_audit_logs import record
 from auth import (
     can_audit,
     is_super_admin,
@@ -156,6 +157,11 @@ def update_type(type_id):
     # 留痕放在 UPDATE 成功之后，避免写入与实际状态不一致的孤立记录
     if auto_approved:
         add_log(type_id, "auto_approve", row["audit_status"], 1, g.user["id"], g.user["username"])
+    if any("is_published" in u for u in updates):
+        record(g.user, "toggle_publish", "type", type_id, name or row["name"],
+               "发布" if data.get("isPublished") else "下架")
+    elif any("name" in u for u in updates):
+        record(g.user, "rename", "type", type_id, name, f"{row['name']} → {name}")
     return ok(_serialize(_fetch_row(type_id), g.user["id"], True))
 
 
@@ -235,6 +241,7 @@ def delete_type(type_id):
     ):
         return fail("仅管理员可删除已发布类型，或创建者可删除自己待审核 / 已驳回的类型", 403)
     db.execute("DELETE FROM types WHERE id = %s", (type_id,))  # 视频的 type_id 由外键置空
+    record(g.user, "delete_type", "type", type_id, row["name"])
     return ok()
 
 

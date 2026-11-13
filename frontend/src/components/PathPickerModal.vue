@@ -189,8 +189,8 @@ watch(
   padding: 0 12px;
   border: 1px solid #333338;
   border-radius: 5px;
-  background: #1f1f23;
-  color: #b3b3b3;
+  background: var(--nf-bg-elevated);
+  color: var(--nf-text-secondary);
   font-size: 12px;
   cursor: pointer;
 }
@@ -226,8 +226,8 @@ watch(
   padding: 9px 14px;
   border: 1px solid #333338;
   border-radius: 6px;
-  background: #1f1f23;
-  color: #e5e5e5;
+  background: var(--nf-bg-elevated);
+  color: var(--nf-text-primary);
   font-size: 13.5px;
   text-align: left;
   cursor: pointer;

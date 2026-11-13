@@ -8,6 +8,7 @@ from flask import Blueprint, g, request
 
 import config
 import db
+from admin_audit_logs import record
 from audit_logs import add_log, serialize_log
 from auth import (
     LOWER_ROLES_SQL, ROLE_LEVELS, can_audit, is_super_admin, manageable_sql,
@@ -56,6 +57,11 @@ def serialize_video(row):
         # 是否收藏由 attach_favorites 按当前用户填充；收藏量是全库累计人数
         "isFavorite": False,
         "favoriteCount": row.get("favorite_count") or 0,
+        # 评分均分 / 本人评分 / 想看状态由 attach_engagement 批量填充
+        "avgScore": 0,
+        "ratingCount": 0,
+        "myScore": 0,
+        "isWantToWatch": False,
         "viewCount": row.get("view_count") or 0,
         "isPublic": bool(row.get("is_public")),
         "auditStatus": row.get("audit_status"),
@@ -85,6 +91,50 @@ def attach_favorites(items):
     fav_ids = {r["video_id"] for r in rows}
     for item in items:
         item["isFavorite"] = item["id"] in fav_ids
+    return items
+
+
+def attach_engagement(items):
+    """批量填充评分统计与当前用户的评分 / 想看状态。
+
+    与 attach_favorites 同样用 IN 批量查询，避免列表页产生 N+1 请求。
+    均分是全体用户的聚合值，myScore / isWantToWatch 只属于当前登录用户。
+    """
+    if not items:
+        return items
+    ids = [x["id"] for x in items]
+    placeholders = ",".join(["%s"] * len(ids))
+    uid = g.user["id"]
+    stats = {
+        r["video_id"]: r
+        for r in db.query(
+            f"SELECT video_id, ROUND(AVG(score), 1) AS avg_score, COUNT(*) AS rating_count "
+            f"FROM video_ratings WHERE video_id IN ({placeholders}) GROUP BY video_id",
+            ids,
+        )
+    }
+    mine = {
+        r["video_id"]: r["score"]
+        for r in db.query(
+            f"SELECT video_id, score FROM video_ratings "
+            f"WHERE user_id = %s AND video_id IN ({placeholders})",
+            (uid, *ids),
+        )
+    }
+    wanted = {
+        r["video_id"]
+        for r in db.query(
+            f"SELECT video_id FROM video_watchlist "
+            f"WHERE user_id = %s AND video_id IN ({placeholders})",
+            (uid, *ids),
+        )
+    }
+    for item in items:
+        s = stats.get(item["id"])
+        item["avgScore"] = float(s["avg_score"]) if s and s["avg_score"] is not None else 0
+        item["ratingCount"] = (s["rating_count"] if s else 0) or 0
+        item["myScore"] = mine.get(item["id"], 0)
+        item["isWantToWatch"] = item["id"] in wanted
     return items
 
 
@@ -195,11 +245,14 @@ def list_videos():
     tag_id = request.args.get("tagId", type=int)
     type_id = request.args.get("typeId", type=int)
     favorite = request.args.get("favorite", 0, type=int)
+    wantlist = request.args.get("wantlist", 0, type=int)  # 想看清单：与收藏分离的独立视图
+    min_score = request.args.get("minScore", 0, type=float)  # 最低平均分（可选）
     audit_status = request.args.get("auditStatus", type=int)  # 审核筛选：0 待审核 / 1 已通过 / 2 已驳回
     scope = (request.args.get("scope") or "gallery").strip()  # gallery 主影库 / audit 审核中心 / mine 我的提交
     sort = (request.args.get("sort") or "updated").strip()  # updated/created/hot/views/title
     owner_id = request.args.get("ownerId", type=int)
     collection_id = request.args.get("collectionId", type=int)
+    playlist_id = request.args.get("playlistId", type=int)
     # 频道页筛选（全部可缺省，旧调用方不受影响）：
     # year 按入库年份、letter 按标题首字母、region/language 按标题或备注关键词匹配
     # 说明：本系统未单独存储「上映地区 / 语言 / 上映年份」字段，故以已入库的文本信息做匹配，
@@ -231,9 +284,10 @@ def list_videos():
         return fail("查询范围无效")
 
     if keyword:
+        # 安全：搜索仅匹配标题与备注，不暴露内部存储路径 file_path（避免把 uploads/ 等目录结构透给用户）
         like = f"%{keyword}%"
-        conditions.append("(v.title LIKE %s OR v.file_path LIKE %s OR v.description LIKE %s)")
-        args.extend([like, like, like])
+        conditions.append("(v.title LIKE %s OR v.description LIKE %s)")
+        args.extend([like, like])
     if tag_id:
         conditions.append("v.id IN (SELECT video_id FROM video_tags WHERE tag_id = %s)")
         args.append(tag_id)
@@ -244,6 +298,14 @@ def list_videos():
         # 我的收藏：按当前登录用户的收藏记录筛选（不再是视频上的全局开关）
         conditions.append("v.id IN (SELECT video_id FROM video_favorites WHERE user_id = %s)")
         args.append(g.user["id"])
+    if wantlist:
+        conditions.append("v.id IN (SELECT video_id FROM video_watchlist WHERE user_id = %s)")
+        args.append(g.user["id"])
+    if min_score > 0:
+        conditions.append(
+            "v.id IN (SELECT video_id FROM video_ratings GROUP BY video_id HAVING AVG(score) >= %s)"
+        )
+        args.append(min(5.0, min_score))
     if audit_status in (0, 1, 2):
         conditions.append("v.audit_status = %s")
         args.append(audit_status)
@@ -253,6 +315,15 @@ def list_videos():
     if collection_id:
         conditions.append("v.collection_id = %s")
         args.append(collection_id)
+    if playlist_id:
+        # 个人片单（playlists/playlist_videos）隔离于系统合集；仅本人或超管可访问该片单
+        pl = db.query(
+            "SELECT id, user_id FROM playlists WHERE id = %s", (playlist_id,), one=True
+        )
+        if not pl or (pl["user_id"] != g.user["id"] and not is_super_admin(g.user)):
+            return fail("片单不存在或无权访问", 404)
+        conditions.append("v.id IN (SELECT video_id FROM playlist_videos WHERE playlist_id = %s)")
+        args.append(playlist_id)
     # ---- 频道页多行筛选：与上方条件按 AND 叠加 ----
     if year and 1900 <= year <= 2999:
         conditions.append("YEAR(v.created_at) = %s")
@@ -280,6 +351,8 @@ def list_videos():
         "created": "v.created_at DESC, v.id DESC",
         "hot": "(v.view_count + favorite_count * 5) DESC, v.updated_at DESC, v.id DESC",
         "views": "v.view_count DESC, v.id DESC",
+        "rating": "(SELECT AVG(score) FROM video_ratings r WHERE r.video_id = v.id) DESC, "
+                  "(SELECT COUNT(*) FROM video_ratings r2 WHERE r2.video_id = v.id) DESC, v.id DESC",
         "title": "v.title ASC, v.id DESC",
     }.get(sort, "v.updated_at DESC, v.id DESC")
 
@@ -295,7 +368,7 @@ def list_videos():
         "total": total,
         "page": page,
         "pageSize": page_size,
-        "items": attach_favorites([serialize_video(r) for r in rows]),
+        "items": attach_engagement(attach_favorites([serialize_video(r) for r in rows])),
     })
 
 
@@ -314,7 +387,7 @@ def featured_videos():
         LIMIT %s
     """
     rows = db.query(sql, [*vis_args, limit])
-    return ok({"items": attach_favorites([serialize_video(r) for r in rows])})
+    return ok({"items": attach_engagement(attach_favorites([serialize_video(r) for r in rows]))})
 
 
 @bp.get("/<int:video_id>")
@@ -329,7 +402,7 @@ def get_video_detail(video_id):
     )
     if not row:
         return fail("视频不存在", 404)
-    return ok(attach_favorites([serialize_video(row)])[0])
+    return ok(attach_engagement(attach_favorites([serialize_video(row)]))[0])
 
 
 @bp.post("")
@@ -458,7 +531,7 @@ def delete_video(video_id):
     """删除视频：数据库记录 + 磁盘源文件 + 缩略图缓存一并清理（仅本人或超级管理员）"""
     mg_sql, mg_args = manageable_sql(g.user)
     row = db.query(
-        f"SELECT file_path FROM videos WHERE id = %s AND {mg_sql}",
+        f"SELECT file_path, title FROM videos WHERE id = %s AND {mg_sql}",
         (video_id, *mg_args),
         one=True,
     )
@@ -467,6 +540,7 @@ def delete_video(video_id):
     result = db.execute("DELETE FROM videos WHERE id = %s", (video_id,))
     if result["rowcount"] == 0:
         return fail("视频不存在", 404)
+    record(g.user, "delete_video", "video", video_id, row["title"])
 
     file_deleted, file_missing = delete_source_file(row["file_path"])
     remove_thumb(video_id)  # 同步清理缩略图缓存（存在与否不影响删除结果）

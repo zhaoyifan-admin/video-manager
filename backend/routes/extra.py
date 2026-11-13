@@ -1,10 +1,15 @@
-"""扩展接口：观看进度 / 审核通知 / 存储体检 / 路径重定位 / 合集 / 管理员看板（/api）
+"""扩展接口：观看进度 / 审核通知 / 存储体检 / 路径重定位 / 管理员看板（/api）
 
 与 videos.py 分开，保持核心业务文件聚焦。
+合集已独立为 routes/collections.py（接入审核模型），管理员操作审计见 routes/admin_logs.py。
 """
+import os
+from datetime import date, timedelta
+
 from flask import Blueprint, g, request
 
 import db
+from admin_audit_logs import record
 from auth import manageable_sql, require_admin, require_login, visible_sql
 from responses import ok, fail
 from storage import media_roots, resolve_video_path, validate_media_path
@@ -187,56 +192,108 @@ def relocate():
         if not dry_run:
             db.execute("UPDATE videos SET file_path = %s WHERE id = %s", (stored, r["id"]))
         updated += 1
+    if not dry_run and updated:
+        record(g.user, "relocate_videos", "path", None, f"{old_prefix} → {new_prefix}",
+               f"更新 {updated} 条记录")
     return ok({"updated": updated, "invalid": invalid, "dryRun": dry_run})
 
 
-# ---------- 合集 ----------
-@bp.get("/collections")
-@require_login
-def list_collections():
-    rows = db.query(
-        "SELECT c.id, c.name, c.description, c.created_at, "
-        "(SELECT COUNT(*) FROM videos v WHERE v.collection_id = c.id) AS video_count "
-        "FROM collections c ORDER BY c.name"
-    )
-    return ok({"items": [{
-        "id": r["id"], "name": r["name"], "description": r["description"],
-        "videoCount": r["video_count"],
-    } for r in rows]})
-
-
-@bp.post("/collections")
-@require_login
-def create_collection():
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    if not name or len(name) > 100:
-        return fail("合集名称需 1-100 个字符")
-    if db.query("SELECT id FROM collections WHERE name = %s", (name,), one=True):
-        return fail("同名合集已存在")
-    result = db.execute(
-        "INSERT INTO collections (name, description) VALUES (%s, %s)",
-        (name, (data.get("description") or "").strip()[:500]),
-    )
-    return ok({"id": result["lastrowid"]})
-
-
-@bp.delete("/collections/<int:collection_id>")
-@require_login
-@require_admin
-def delete_collection(collection_id):
-    result = db.execute("DELETE FROM collections WHERE id = %s", (collection_id,))
-    if result["rowcount"] == 0:
-        return fail("合集不存在", 404)
-    return ok()
-
+# 说明：合集已接入审核模型，相关接口迁移至 routes/collections.py（独立蓝图），
+# 此处不再重复注册 /api/collections 路由，避免同名规则冲突。
 
 # ---------- 管理员看板 ----------
+# ---------- 看板增强：观看趋势 / 热门标签 / 存储增长 ----------
+def _day_series(days):
+    """生成含今天在内的连续日期序列（补零，前端不必再对齐空档）"""
+    today = date.today()
+    return [today - timedelta(days=offset) for offset in range(days - 1, -1, -1)]
+
+
+def _view_trend(days=14):
+    """近 N 天每日去重播放量（video_view_daily 一用户一视频一天只记一次）"""
+    series = _day_series(days)
+    rows = db.query(
+        "SELECT view_date AS d, COUNT(*) AS c FROM video_view_daily "
+        "WHERE view_date >= %s GROUP BY view_date",
+        (series[0],),
+    )
+    by_day = {r["d"]: int(r["c"]) for r in rows}
+    return [{"date": d.strftime("%m-%d"), "fullDate": d.isoformat(),
+             "views": by_day.get(d, 0)} for d in series]
+
+
+def _hot_tags(limit=8):
+    """已发布标签按关联影片数排序，附带这些影片的累计播放量"""
+    rows = db.query(
+        "SELECT t.id, t.name, COUNT(vt.video_id) AS video_count, "
+        "COALESCE(SUM(v.view_count), 0) AS total_views "
+        "FROM tags t JOIN video_tags vt ON vt.tag_id = t.id "
+        "JOIN videos v ON v.id = vt.video_id "
+        "WHERE t.is_published = 1 GROUP BY t.id, t.name "
+        "ORDER BY video_count DESC, total_views DESC LIMIT %s",
+        (limit,),
+    )
+    return [{"id": r["id"], "name": r["name"],
+             "videoCount": int(r["video_count"]), "totalViews": int(r["total_views"] or 0)}
+            for r in rows]
+
+
+def _storage_growth(days=30):
+    """近 N 天「按入库日归属」的存储增长曲线。
+
+    口径：每条影片的实际源文件大小计入其 created_at 当天；外链与磁盘上已找不到
+    的文件不计字节（仍计入影片数），仅在 unmeasured 中给出数量，避免曲线虚高。
+    """
+    series = _day_series(days)
+    rows = db.query("SELECT file_path, DATE(created_at) AS d FROM videos")
+    base = {"videos": 0, "bytes": 0}
+    buckets = {}
+    unmeasured = 0
+    for r in rows:
+        path = r["file_path"] or ""
+        size = 0
+        if path and not path.lower().startswith(("http://", "https://")):
+            full = resolve_video_path(path)
+            if full and os.path.isfile(full):
+                try:
+                    size = os.path.getsize(full)
+                except OSError:
+                    unmeasured += 1
+            else:
+                unmeasured += 1
+        d = r["d"]
+        if d < series[0]:
+            base["videos"] += 1
+            base["bytes"] += size
+        else:
+            bucket = buckets.setdefault(d, {"videos": 0, "bytes": 0})
+            bucket["videos"] += 1
+            bucket["bytes"] += size
+
+    cum_v, cum_b = base["videos"], base["bytes"]
+    points = []
+    for d in series:
+        bucket = buckets.get(d, {"videos": 0, "bytes": 0})
+        cum_v += bucket["videos"]
+        cum_b += bucket["bytes"]
+        points.append({
+            "date": d.strftime("%m-%d"), "fullDate": d.isoformat(),
+            "addedVideos": bucket["videos"], "addedBytes": bucket["bytes"],
+            "cumulativeVideos": cum_v, "cumulativeBytes": cum_b,
+        })
+    return {
+        "points": points,
+        "totalVideos": cum_v,
+        "totalBytes": cum_b,
+        "unmeasured": unmeasured,
+    }
+
+
 @bp.get("/admin/overview")
 @require_login
 @require_admin
 def overview():
-    """总量 / 审核分布 / 近 7 天新增 / 平均审核时长 / 热门视频"""
+    """总量 / 审核分布 / 平均审核时长 / 热门视频 + 观看趋势 / 热门标签 / 存储增长"""
     counts = db.query(
         "SELECT COUNT(*) AS total, "
         "SUM(audit_status = 0) AS pending, SUM(audit_status = 1) AS approved, "
@@ -272,4 +329,7 @@ def overview():
             "id": r["id"], "title": r["title"],
             "viewCount": r["view_count"], "favoriteCount": r["favorite_count"],
         } for r in hot],
+        "viewTrend": _view_trend(14),
+        "hotTags": _hot_tags(8),
+        "storageGrowth": _storage_growth(30),
     })

@@ -16,6 +16,7 @@ import AdminPage from './AdminPage.vue'
 import GlobalFeedback from './ui/GlobalFeedback.vue'
 import { vLazyCover } from './composables/useCover'
 import { ensureLoaded, resetAuth } from './composables/useAuth'
+import { initTheme } from './composables/useTheme'
 import { setUnauthorizedHandler } from './api'
 
 const router = createRouter({
@@ -57,6 +58,9 @@ setUnauthorizedHandler(() => {
     router.push({ name: 'login' })
   }
 })
+
+// 首屏渲染前落定主题，避免深色 → 浅色的闪屏
+initTheme()
 
 // 根组件：路由视图 + 全局 Toast / 确认框（全部手写，无 UI 框架）
 createApp({

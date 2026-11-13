@@ -2,16 +2,19 @@ import { computed, ref } from 'vue'
 import {
   listTags, createTag, updateTag, deleteTag, reviewTag, resubmitTag, getTagLogs,
   listTypes, createType, updateType, deleteType, reviewType, resubmitType, getTypeLogs,
+  listCollectionsForWorkbench, submitCollection, updateCollection, deleteCollection,
+  reviewCollection, resubmitCollection, getCollectionLogs,
 } from '../api'
 import { useAuth } from './useAuth'
 import { showToast } from '../ui/toast'
 import { confirmAction } from '../ui/confirm'
 
-// 标签与影视类型的审核流程完全一致，统一在此维护一份逻辑；
-// 两个资源仅通过 API 集合与少量文案区分，界面只负责渲染。
+// 标签 / 影视类型 / 合集的审核流程完全一致，统一在此维护一份逻辑；
+// 三个资源仅通过 API 集合与少量文案区分，界面只负责渲染。
 export const TAXONOMY_TABS = [
   { key: 'tag', label: '标签', desc: '多选题材标记，用于视频筛选', icon: 'tag' },
   { key: 'type', label: '影视类型', desc: '单选分类，决定首页频道', icon: 'film' },
+  { key: 'collection', label: '合集', desc: '把多部影片归为一组，可按合集筛选', icon: 'layer-group' },
 ]
 
 export const QUICK_REASONS = [
@@ -35,6 +38,16 @@ const RESOURCES = {
     api: {
       list: listTypes, create: createType, update: updateType, remove: deleteType,
       review: reviewType, resubmit: resubmitType, logs: getTypeLogs,
+    },
+  },
+  collection: {
+    label: '合集',
+    deleteHint: '其下影片不会被删除，只会解除与合集的关联。',
+    maxLength: 100,
+    api: {
+      list: listCollectionsForWorkbench, create: submitCollection,
+      update: updateCollection, remove: deleteCollection,
+      review: reviewCollection, resubmit: resubmitCollection, logs: getCollectionLogs,
     },
   },
 }
@@ -95,8 +108,9 @@ export function useTaxonomy(onChanged) {
   const canAudit = computed(() => ['admin', 'manager', 'reviewer'].includes(user.value?.role))
   const roleText = computed(() => (canAudit.value ? '审核权限' : '普通用户'))
 
-  const active = ref('tag')
-  const buckets = ref({ tag: [], type: [] })
+  const emptyBuckets = () => Object.fromEntries(TAXONOMY_TABS.map((t) => [t.key, []]))
+  const active = ref(TAXONOMY_TABS[0].key)
+  const buckets = ref(emptyBuckets())
   const loading = ref(false)
   const switching = ref(false)
 
@@ -171,8 +185,10 @@ export function useTaxonomy(onChanged) {
   const loadAll = async () => {
     loading.value = true
     try {
-      const [t, tp] = await Promise.all([load('tag'), load('type')])
-      buckets.value = { tag: t, type: tp }
+      const entries = await Promise.all(
+        TAXONOMY_TABS.map(async (t) => [t.key, await load(t.key)]),
+      )
+      buckets.value = Object.fromEntries(entries)
     } finally {
       loading.value = false
     }

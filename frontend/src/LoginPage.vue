@@ -203,7 +203,7 @@ const submit = async () => {
   padding: 24px;
   background:
     radial-gradient(1000px 500px at 70% -10%, rgba(229, 9, 20, 0.16), transparent 60%),
-    var(--nf-bg, #0b0b0d);
+    var(--nf-bg, var(--nf-bg-page));
 }
 
 .login-card {
@@ -211,7 +211,7 @@ const submit = async () => {
   max-width: 100%;
   padding: 44px 40px 36px;
   background: rgba(24, 24, 27, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--nf-overlay-soft);
   border-radius: 12px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
 }
@@ -243,7 +243,7 @@ const submit = async () => {
 .login-title {
   font-size: 21px;
   font-weight: 700;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
 }
 
 .login-desc {

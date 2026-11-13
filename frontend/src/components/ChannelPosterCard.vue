@@ -12,7 +12,7 @@ const props = defineProps({
   selectable: { type: Boolean, default: false },
   selected: { type: Boolean, default: false },
 })
-defineEmits(['play', 'detail', 'toggle-fav', 'edit', 'remove', 'toggle-public', 'select'])
+defineEmits(['play', 'detail', 'toggle-fav', 'edit', 'remove', 'toggle-public', 'select', 'add-playlist'])
 
 const { coverCache, durationCache } = useCover()
 
@@ -39,6 +39,7 @@ const actions = computed(() => {
       key: 'toggle-fav', icon: ICONS.fav, variant: v.isFavorite ? 'solid' : 'regular',
       title: v.isFavorite ? '取消收藏' : '收藏', show: true, active: v.isFavorite,
     },
+    { key: 'add-playlist', icon: ICONS.playlist, title: '加入片单', show: true },
     { key: 'edit', icon: ICONS.edit, title: '编辑', show: props.manageable },
     {
       key: 'toggle-public', icon: v.isPublic ? ICONS.publicOn : ICONS.publicOff,
@@ -65,7 +66,7 @@ const actions = computed(() => {
       <img
         v-if="coverCache[video.id]"
         :src="coverCache[video.id]"
-        class="absolute inset-0 h-full w-full object-cover"
+        class="nf-media-ready absolute inset-0 h-full w-full object-cover"
         alt=""
       />
       <div class="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30"></div>
@@ -92,6 +93,15 @@ const actions = computed(() => {
         />
       </label>
 
+      <!-- 右下角评分：有评分才显示，避免影库里全是 0.0 -->
+      <span
+        v-if="video.ratingCount"
+        class="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-[1px] text-[10px] font-semibold tabular-nums text-nf-amber"
+        :title="`${video.ratingCount} 人评分`"
+      >
+        <FaIcon :icon="ICONS.star" :fixed="false" />{{ Number(video.avgScore).toFixed(1) }}
+      </span>
+
       <!-- 左下角时长 -->
       <span
         v-if="durationCache[video.id]"
@@ -117,7 +127,7 @@ const actions = computed(() => {
         <button
           v-for="a in actions"
           :key="a.key"
-          class="flex h-6 w-6 shrink-0 items-center justify-center rounded border-0 bg-transparent text-white/70 transition-colors hover:bg-white/15 hover:text-white"
+          class="flex h-6 w-6 shrink-0 items-center justify-center rounded border-0 bg-transparent text-white/70 transition-colors hover:bg-white/15 hover:text-nf-text"
           :class="[
             a.active ? 'text-nf-red' : '',
             a.danger ? 'hover:bg-nf-red hover:text-white' : '',
@@ -137,7 +147,7 @@ const actions = computed(() => {
 
     <!-- 海报下方信息：标题 + 简介 -->
     <h3
-      class="mt-2 truncate text-[13px] font-semibold text-nf-text transition-colors group-hover:text-white"
+      class="mt-2 truncate text-[13px] font-semibold text-nf-text transition-colors group-hover:text-nf-text"
       :title="video.title"
     >
       {{ video.title }}

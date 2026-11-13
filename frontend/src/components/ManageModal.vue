@@ -30,16 +30,16 @@ defineExpose({ open: openModal })
 // ===== 纯 Tailwind 类名常量（项目跳过 preflight，所有按钮显式去掉浏览器默认底色/边框）=====
 const BTN = 'inline-flex items-center justify-center gap-1 border border-solid bg-transparent cursor-pointer transition-colors'
 const TAB_ON = 'border-0 bg-nf-red text-white shadow-[0_2px_14px_rgba(229,9,20,0.3)]'
-const TAB_OFF = 'border-0 bg-transparent text-nf-sub hover:bg-white/[0.06] hover:text-white'
+const TAB_OFF = 'border-0 bg-transparent text-nf-sub hover:bg-white/[0.06] hover:text-nf-text'
 const CARD_ON = 'border-nf-red/50 bg-nf-red/[0.09]'
 const CARD_OFF = 'border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.05]'
-const ACT_PLAIN = `${BTN} h-7 shrink-0 rounded border-white/15 px-2.5 text-[11.5px] font-medium leading-none text-nf-sub hover:border-white/35 hover:bg-white/[0.06] hover:text-white`
+const ACT_PLAIN = `${BTN} h-7 shrink-0 rounded border-white/15 px-2.5 text-[11.5px] font-medium leading-none text-nf-sub hover:border-white/35 hover:bg-white/[0.06] hover:text-nf-text`
 const ACT_PASS = `${BTN} h-7 shrink-0 rounded border-emerald-500/40 px-2.5 text-[11.5px] font-semibold leading-none text-emerald-300 hover:border-emerald-400/70 hover:bg-emerald-500/20 hover:text-emerald-200`
 const ACT_DANGER = `${BTN} h-7 shrink-0 rounded border-rose-500/40 px-2.5 text-[11.5px] font-semibold leading-none text-rose-300 hover:border-rose-400/70 hover:bg-rose-500/20 hover:text-rose-200`
 const ACT_PUBLISH = `${BTN} h-7 shrink-0 rounded border-emerald-500/40 px-2.5 text-[11.5px] font-semibold leading-none text-emerald-300 hover:border-emerald-400/70 hover:bg-emerald-500/20 hover:text-emerald-200`
 const ACT_UNPUBLISH = `${BTN} h-7 shrink-0 rounded border-amber-500/40 px-2.5 text-[11.5px] font-semibold leading-none text-amber-300 hover:border-amber-400/70 hover:bg-amber-500/20 hover:text-amber-200`
 const INPUT = 'w-full rounded-md border border-solid border-white/10 bg-nf-elevated text-[13px] text-nf-text placeholder:text-nf-muted outline-none transition-colors focus:border-nf-red/60'
-const QUICK_CHIP = `${BTN} rounded-full border-white/15 px-2.5 py-1 text-[11px] text-nf-sub hover:border-white/35 hover:bg-white/[0.06] hover:text-white`
+const QUICK_CHIP = `${BTN} rounded-full border-white/15 px-2.5 py-1 text-[11px] text-nf-sub hover:border-white/35 hover:bg-white/[0.06] hover:text-nf-text`
 
 const STAT_CARDS = [
   { key: 'all', label: '全部条目', tone: 'text-nf-text' },
@@ -51,14 +51,17 @@ const STAT_CARDS = [
 ]
 
 const subInfo = (row) => {
-  if (row.createdByName) return `由 ${row.createdByName} 提交`
-  if (row.isMine) return '由我提交'
-  return '系统预置'
+  let base
+  if (row.createdByName) base = `由 ${row.createdByName} 提交`
+  else if (row.isMine) base = '由我提交'
+  else base = '系统预置'
+  // 合集额外展示已关联影片数，便于判断删除影响面
+  return row.videoCount !== undefined ? `${base} · ${row.videoCount} 部影片` : base
 }
 </script>
 
 <template>
-  <NfModal v-model="visible" title="分类管理 · 标签与影视类型" width="880px">
+  <NfModal v-model="visible" title="分类管理 · 标签 / 影视类型 / 合集" width="880px">
     <!-- ============ 顶部：资源切换 + 权限说明 ============ -->
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-3.5">
       <div class="flex items-center gap-1 rounded-lg border border-solid border-white/[0.08] bg-black/25 p-1">
@@ -69,11 +72,11 @@ const subInfo = (row) => {
           :class="active === tab.key ? TAB_ON : TAB_OFF"
           @click="switchTab(tab.key)"
         >
-          <FaIcon :icon="tab.icon === 'tag' ? 'tag' : 'film'" :fixed="false" class="text-[15px]" />
+          <FaIcon :icon="tab.icon" :fixed="false" class="text-[15px]" />
           {{ tab.label }}
           <span
             v-if="tab.key === active && counts.pending"
-            class="rounded-full bg-white/25 px-1.5 py-[1px] text-[10px] font-bold text-white"
+            class="rounded-full bg-white/25 px-1.5 py-[1px] text-[10px] font-bold text-nf-text"
             :title="`当前分类有 ${counts.pending} 条待审核`"
           >{{ counts.pending }}</span>
         </button>
@@ -114,8 +117,8 @@ const subInfo = (row) => {
             v-model="draft"
             :class="INPUT"
             class="h-9 pl-9 pr-3"
-            :placeholder="`输入新${current.label}名称，最多 50 字`"
-            maxlength="50"
+            :placeholder="`输入新${current.label}名称，最多 ${current.maxLength || 50} 字`"
+            :maxlength="current.maxLength || 50"
             @keyup.enter="create"
           />
         </div>
@@ -147,7 +150,7 @@ const subInfo = (row) => {
       </div>
       <button
         v-if="hasFilter"
-        class="inline-flex items-center justify-center gap-1.5 h-8 shrink-0 rounded-md border border-solid border-white/15 bg-transparent px-2.5 text-[11.5px] text-nf-sub cursor-pointer transition-colors hover:border-white/35 hover:text-white"
+        class="inline-flex items-center justify-center gap-1.5 h-8 shrink-0 rounded-md border border-solid border-white/15 bg-transparent px-2.5 text-[11.5px] text-nf-sub cursor-pointer transition-colors hover:border-white/35 hover:text-nf-text"
         @click="resetFilters"
       >
         <FaIcon :icon="ICONS.close" :fixed="false" />清除筛选
@@ -162,7 +165,7 @@ const subInfo = (row) => {
       </div>
 
       <div v-else-if="!filtered.length" class="flex flex-col items-center gap-2 py-10 text-center">
-        <FaIcon :icon="ICONS.list" :fixed="false" class="text-[30px] text-white/20" />
+        <FaIcon :icon="ICONS.list" :fixed="false" class="text-[30px] text-nf-muted/40" />
         <div class="text-[13.5px] font-semibold text-nf-sub">
           {{ rows.length ? '没有匹配的条目' : `还没有${current.label}` }}
         </div>
@@ -171,7 +174,7 @@ const subInfo = (row) => {
         </p>
         <button
           v-if="hasFilter"
-          class="inline-flex items-center justify-center gap-1.5 mt-1 h-7 rounded-md border border-solid border-white/15 bg-transparent px-3 text-[11.5px] text-nf-sub cursor-pointer hover:text-white"
+          class="inline-flex items-center justify-center gap-1.5 mt-1 h-7 rounded-md border border-solid border-white/15 bg-transparent px-3 text-[11.5px] text-nf-sub cursor-pointer hover:text-nf-text"
           @click="resetFilters"
         >
           <FaIcon :icon="ICONS.close" :fixed="false" />清除筛选

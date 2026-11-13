@@ -36,7 +36,7 @@ const onSizeChange = (e) => {
 // 页码按钮的工具类：基础态 + 当前页高亮态（Netflix 红实底）
 const btnBase =
   'min-w-8 h-8 px-2 border rounded-[5px] text-[13px] cursor-pointer transition-colors ' +
-  'enabled:hover:border-nf-line-hover enabled:hover:text-white disabled:opacity-35 disabled:cursor-not-allowed ' +
+  'enabled:hover:border-nf-line-hover enabled:hover:text-nf-text disabled:opacity-35 disabled:cursor-not-allowed ' +
   'border-nf-line bg-nf-elevated text-nf-sub'
 const btnOn = 'bg-nf-red border-nf-red text-white font-bold'
 const btnClass = (p) => (p === props.page ? btnOn : btnBase)

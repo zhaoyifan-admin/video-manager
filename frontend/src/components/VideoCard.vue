@@ -16,7 +16,7 @@ defineProps({
   selected: { type: Boolean, default: false },
 })
 
-defineEmits(['play', 'edit', 'remove', 'toggle-fav', 'toggle-public', 'audit-log', 'select'])
+defineEmits(['play', 'edit', 'remove', 'toggle-fav', 'toggle-public', 'audit-log', 'select', 'add-playlist'])
 
 const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
 </script>
@@ -36,6 +36,7 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
     <video
       v-if="video.filePath"
       class="card-video"
+      :class="{ 'nf-media-ready': !!coverCache[video.id] }"
       :src="mediaSrc(video)"
       :poster="coverCache[video.id] || undefined"
       muted
@@ -49,6 +50,20 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
     <!-- 左上角徽章组：类型 / 公开 / 审核状态 -->
     <div class="cover-badges">
       <span v-if="video.typeName" class="cover-type">{{ video.typeName }}</span>
+      <span
+        v-if="video.ratingCount"
+        class="inline-flex items-center gap-1 rounded bg-black/60 px-1.5 py-[2px] text-[10.5px] font-semibold tabular-nums text-nf-amber"
+        :title="`${video.ratingCount} 人评分`"
+      >
+        <FaIcon :icon="ICONS.star" :fixed="false" class="text-[10px]" />{{ Number(video.avgScore).toFixed(1) }}
+      </span>
+      <span
+        v-if="video.isWantToWatch"
+        class="inline-flex items-center rounded bg-black/60 px-1.5 py-[2px] text-[10.5px] text-nf-red"
+        title="已加入想看清单"
+      >
+        <FaIcon :icon="ICONS.wantlist" :fixed="false" class="text-[10px]" />
+      </span>
       <span v-if="video.isPublic" class="cover-public" title="公开视频，所有用户可观看">公开</span>
       <span v-if="video.auditStatus === 0" class="cover-audit pending" title="等待管理员审核">待审核</span>
       <span v-else-if="video.auditStatus === 2" class="cover-audit rejected" title="管理员已驳回，仅自己可见">已驳回</span>
@@ -134,6 +149,7 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
       <div class="detail-footer">
         <span class="bar-muted">{{ video.updatedAt }}</span>
         <div class="detail-ops">
+          <button class="nf-btn sm ghost" @click.stop="$emit('add-playlist', video)"><FaIcon :icon="ICONS.playlist" :fixed="false" />片单</button>
           <button v-if="showAuditLog" class="nf-btn sm ghost" @click.stop="$emit('audit-log', video)"><FaIcon :icon="ICONS.auditLog" :fixed="false" />审核记录</button>
           <button v-if="manageable" class="nf-btn sm ghost" @click.stop="$emit('toggle-public', video)">
             {{ video.isPublic ? '设为私有' : '设为公开' }}
@@ -271,6 +287,11 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   z-index: 5;
 }
 
+/* 窄屏两列布局：降低卡片高度，避免竖长卡片占满整屏 */
+@media (max-width: 600px) {
+  .video-card-inner { height: 300px; }
+}
+
 .card-video {
   position: absolute;
   inset: 0;
@@ -336,7 +357,7 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   font-size: 12px;
   line-height: 18px;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--nf-text-primary);
 }
 
 .bar-tags {
@@ -353,16 +374,16 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   display: inline-block;
   padding: 1px 9px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--nf-overlay);
+  border: 1px solid var(--nf-overlay);
   font-size: 12px;
   line-height: 18px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--nf-text-primary);
 }
 
 .bar-muted {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--nf-text-primary);
 }
 
 /* ===== 悬停态：详情浮层 ===== */
@@ -407,12 +428,12 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
 }
 
 .detail-label {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--nf-text-primary);
   flex-shrink: 0;
 }
 
 .detail-value {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--nf-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -467,7 +488,7 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   justify-content: space-between;
   gap: 8px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: 1px solid var(--nf-overlay);
   font-size: 12px;
 }
 
@@ -510,7 +531,7 @@ const { coverCache, durationCache, onMetaLoaded, mediaSrc } = useCover()
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(2px);
-  color: #b3b3b3;
+  color: var(--nf-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -34,6 +34,52 @@
   --nf-text-primary: #f5f5f5;
   --nf-text-secondary: #b3b3b3;
   --nf-text-muted: #757575;
+  /* 半透明叠层 / 输入控件 / 滚动条：手写组件样式统一走变量，主题切换时一起换色 */
+  --nf-overlay: var(--nf-overlay);
+  --nf-overlay-strong: var(--nf-overlay-strong);
+  --nf-overlay-soft: var(--nf-overlay-soft);
+  --nf-bg-input: #1f1f23;
+  --nf-bg-input-focus: #232328;
+  --nf-border-input: #333338;
+  --nf-line-hover: #4d4d55;
+  --nf-skeleton-base: #17171b;
+  --nf-skeleton-bar: #2a2a31;
+  --nf-scroll-thumb: #333;
+}
+
+/* ===== 浅色主题 =====
+   直接覆盖 Tailwind v4 的 --color-nf-* token：所有 bg-nf-* / text-nf-* 工具类
+   引用的都是变量，因此无需改任何组件类名即可整体换色。品牌红保持不变。
+   媒体区（海报 / Hero / 频道头图）刻意保留深色，作为浅色页面里的影院强调区。 */
+html[data-theme='light'] {
+  --color-nf-page: #f4f4f6;
+  --color-nf-card: #ffffff;
+  --color-nf-elevated: #ffffff;
+  --color-nf-border: #d9d9e0;
+  --color-nf-line: #ccd0da;
+  --color-nf-line-hover: #8a8a95;
+  --color-nf-text: #17171c;
+  --color-nf-sub: #4f4f5a;
+  --color-nf-muted: #767682;
+  --color-nf-amber: #a86a00;
+  --color-nf-green: #1f8a45;
+  --nf-bg-page: #f4f4f6;
+  --nf-bg-card: #ffffff;
+  --nf-bg-elevated: #ffffff;
+  --nf-border: #d9d9e0;
+  --nf-text-primary: #17171c;
+  --nf-text-secondary: #4f4f5a;
+  --nf-text-muted: #767682;
+  --nf-overlay: rgba(20, 20, 30, 0.08);
+  --nf-overlay-strong: rgba(20, 20, 30, 0.16);
+  --nf-overlay-soft: rgba(20, 20, 30, 0.05);
+  --nf-bg-input: #ffffff;
+  --nf-bg-input-focus: #ffffff;
+  --nf-border-input: #c8c8d0;
+  --nf-line-hover: #8a8a95;
+  --nf-skeleton-base: #e8e8ee;
+  --nf-skeleton-bar: #d4d4de;
+  --nf-scroll-thumb: #c2c2cc;
 }
 
 * {
@@ -65,15 +111,15 @@ button {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b0b0d;
+  background: var(--nf-bg-page);
 }
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--nf-scroll-thumb);
   border-radius: 5px;
-  border: 2px solid #0b0b0d;
+  border: 2px solid var(--nf-bg-page);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #4d4d4d;
+  background: var(--nf-line-hover);
 }
 
 /* ===== 手写组件类（components 层：可被 utilities 工具类覆盖微调） ===== */
@@ -113,12 +159,12 @@ button {
 
 /* 次按钮：半透明灰（Netflix 「详情」按钮语言） */
 .nf-btn.ghost {
-  background: rgba(255, 255, 255, 0.14);
-  color: #f5f5f5;
+  background: var(--nf-overlay);
+  color: var(--nf-text-primary);
 }
 
 .nf-btn.ghost:hover {
-  background: rgba(255, 255, 255, 0.26);
+  background: var(--nf-overlay-strong);
 }
 
 .nf-btn.lg {
@@ -141,7 +187,7 @@ button {
 }
 
 .nf-btn.text:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--nf-overlay-soft);
   color: #fff;
 }
 
@@ -164,7 +210,7 @@ button {
 }
 
 .nf-btn-menu:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--nf-overlay-soft);
   color: #fff;
 }
 
@@ -174,10 +220,10 @@ button {
 .nf-select {
   width: 100%;
   padding: 8px 12px;
-  background: #1f1f23;
-  border: 1px solid #333338;
+  background: var(--nf-bg-input);
+  border: 1px solid var(--nf-border-input);
   border-radius: 5px;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
   font-size: 13px;
   font-family: inherit;
   outline: none;
@@ -186,20 +232,20 @@ button {
 
 .nf-input::placeholder,
 .nf-textarea::placeholder {
-  color: #5c5c63;
+  color: var(--nf-text-muted);
 }
 
 .nf-input:hover,
 .nf-textarea:hover,
 .nf-select:hover {
-  border-color: #4d4d55;
+  border-color: var(--nf-line-hover);
 }
 
 .nf-input:focus,
 .nf-textarea:focus,
 .nf-select:focus {
   border-color: rgba(229, 9, 20, 0.75);
-  background: #232328;
+  background: var(--nf-bg-input-focus);
 }
 
 .nf-textarea {
@@ -219,8 +265,8 @@ button {
 }
 
 .nf-select option {
-  background: #1f1f23;
-  color: #f5f5f5;
+  background: var(--nf-bg-input);
+  color: var(--nf-text-primary);
 }
 
 /* ===== 表单项布局 ===== */
@@ -245,10 +291,10 @@ button {
 
 .chip-opt {
   padding: 4px 13px;
-  border: 1px solid #333338;
+  border: 1px solid var(--nf-border-input);
   border-radius: 16px;
-  background: #1f1f23;
-  color: #b3b3b3;
+  background: var(--nf-bg-input);
+  color: var(--nf-text-secondary);
   font-size: 12.5px;
   line-height: 18px;
   cursor: pointer;
@@ -258,7 +304,7 @@ button {
 
 .chip-opt:hover {
   border-color: #5c5c63;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
 }
 
 .chip-opt.on {
@@ -280,7 +326,7 @@ button {
 .nf-loading {
   width: 34px;
   height: 34px;
-  border: 3px solid rgba(255, 255, 255, 0.15);
+  border: 3px solid var(--nf-overlay);
   border-top-color: var(--nf-red);
   border-radius: 50%;
   animation: nf-spin 0.8s linear infinite;
@@ -291,4 +337,119 @@ button {
     transform: rotate(360deg);
   }
 }
+
+/* ===== 感知体验升级：骨架屏 / 错峰入场 / 回顶 ===== */
+@keyframes nf-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes nf-shimmer {
+  from { background-position: -180% 0; }
+  to   { background-position: 180% 0; }
+}
+@keyframes nf-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* 列表卡片依次淡入上移，--nf-delay 由模板按序号注入（有上限，避免长列表拖尾）。
+   用 backwards 而非 both：动画结束后不保留 transform，避免压住卡片自身的 hover 缩放。 */
+.nf-enter {
+  animation: nf-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: var(--nf-delay, 0ms);
+}
+
+/* 封面截帧 / 海报加载完成后渐显，避免闪烁 */
+.nf-media-ready {
+  animation: nf-fade 0.35s ease backwards;
+}
+
+/* 骨架屏：与真实卡片同形状，流光扫过代替单调转圈 */
+.nf-skeleton {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--nf-border);
+  border-radius: 8px;
+  background: var(--nf-skeleton-base);
+}
+.nf-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 35%, var(--nf-overlay-soft) 50%, transparent 65%);
+  background-size: 220% 100%;
+  animation: nf-shimmer 1.35s ease-in-out infinite;
+}
+.nf-skeleton-bar {
+  border-radius: 4px;
+  background: var(--nf-skeleton-bar);
+}
+
+/* 横向滑动行（继续观看 / 窄屏筛选）：隐藏滚动条 + 轻吸附 */
+.nf-scroll-x {
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.nf-scroll-x::-webkit-scrollbar { display: none; }
+.nf-scroll-x > * { scroll-snap-align: start; }
+
+/* 回到顶部：滚动超过一屏后出现 */
+.nf-to-top {
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  z-index: 90;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nf-overlay);
+  border-radius: 50%;
+  background: var(--nf-bg-card);
+  color: var(--nf-text-primary);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+.nf-to-top:hover {
+  transform: translateY(-3px);
+  background: var(--nf-red);
+}
+@media (max-width: 900px) {
+  .nf-to-top { right: 16px; bottom: 16px; width: 40px; height: 40px; }
+}
+.nf-pop-enter-active, .nf-pop-leave-active { transition: opacity 0.22s ease; }
+.nf-pop-enter-from, .nf-pop-leave-to { opacity: 0; }
 } /* end @layer components */
+
+/* 全局平滑滚动（放在 layer 外，确保覆盖默认行为） */
+html { scroll-behavior: smooth; }
+
+/* 尊重系统「减少动效」：关闭全部非必要动画 */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .nf-enter, .nf-media-ready { animation: none; }
+  .nf-skeleton::after { animation: none; }
+  .nf-to-top { transition: none; }
+}
+
+/* ===== 浅色主题的导航修正 =====
+   频道头图的渐变终点已在 channelPresets.js 里固定为深色，各频道配色不会丢失；
+   只有导航条的 to-nf-page 会随主题变浅，这里把它换成实色浅底，保证深色导航文字可读。
+   规则放在所有 @layer 之外，因此优先级高于 Tailwind utilities。 */
+html[data-theme='light'] .nf-site-header {
+  background-image: none;
+  background-color: rgba(255, 255, 255, 0.94);
+  border-bottom-color: var(--color-nf-border);
+}
+/* 深色媒体区（Hero / 详情大图）上的次按钮：浅色主题下仍用浅字 + 浅色半透明底，
+   否则 --nf-text-primary 变深后会与深色海报糊在一起。 */
+html[data-theme='light'] .nf-on-media.nf-btn.ghost {
+  background: rgba(255, 255, 255, 0.16);
+  color: #f5f5f5;
+}
+html[data-theme='light'] .nf-on-media.nf-btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.28);
+}

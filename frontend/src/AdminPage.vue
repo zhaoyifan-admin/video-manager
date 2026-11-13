@@ -1,15 +1,13 @@
 <script setup>
 import { ICONS } from './composables/icons'
 import FaIcon from './ui/FaIcon.vue'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getAdminOverview, listUsers, setUserRole, createUser, getIntegrity, relocateVideos,
-  listCollections, createCollection, deleteCollection,
-  listTags, createTag, updateTag, deleteTag,
+  listAdminLogs,
 } from './api'
 import { showToast } from './ui/toast'
-import { confirmAction } from './ui/confirm'
 
 const router = useRouter()
 const goBack = () => router.push({ name: 'list' })
@@ -19,16 +17,13 @@ const TABS = [
   { key: 'overview', label: '数据看板' },
   { key: 'users', label: '用户与角色' },
   { key: 'storage', label: '存储体检' },
-  { key: 'collections', label: '合集管理' },
-  { key: 'tags', label: '标签管理' },
+  { key: 'auditLogs', label: '操作审计' },
 ]
 
 const loading = ref(false)
 const overview = ref(null)
 const users = ref([])
 const integrity = ref(null)
-const collections = ref([])
-const tags = ref([])
 
 const loadOverview = async () => {
   try { overview.value = await getAdminOverview() } catch (e) { showToast.error(e.message) }
@@ -39,11 +34,47 @@ const loadUsers = async () => {
 const loadIntegrity = async () => {
   try { integrity.value = await getIntegrity() } catch (e) { showToast.error(e.message) }
 }
-const loadCollections = async () => {
-  try { collections.value = (await listCollections()).items } catch (e) { showToast.error(e.message) }
+
+// ---------- 操作审计 ----------
+const auditLogs = ref([])
+const auditTotal = ref(0)
+const auditPage = ref(1)
+const auditKeyword = ref('')
+const auditAction = ref('')
+const auditDays = ref(0)
+const auditActionOptions = ref([])
+const AUDIT_PAGE_SIZE = 15
+const auditPageCount = computed(() => Math.max(1, Math.ceil(auditTotal.value / AUDIT_PAGE_SIZE)))
+
+const loadAuditLogs = async () => {
+  try {
+    const data = await listAdminLogs({
+      page: auditPage.value,
+      pageSize: AUDIT_PAGE_SIZE,
+      keyword: auditKeyword.value.trim(),
+      action: auditAction.value,
+      days: auditDays.value,
+    })
+    auditLogs.value = data.items
+    auditTotal.value = data.total
+    auditActionOptions.value = data.actionOptions
+  } catch (e) { showToast.error(e.message) }
 }
-const loadTags = async () => {
-  try { tags.value = await listTags() } catch (e) { showToast.error(e.message) }
+const searchAuditLogs = async () => {
+  auditPage.value = 1
+  await loadAuditLogs()
+}
+const resetAuditFilters = async () => {
+  auditKeyword.value = ''
+  auditAction.value = ''
+  auditDays.value = 0
+  await searchAuditLogs()
+}
+const changeAuditPage = async (delta) => {
+  const next = auditPage.value + delta
+  if (next < 1 || next > auditPageCount.value) return
+  auditPage.value = next
+  await loadAuditLogs()
 }
 
 const loadTab = async (key) => {
@@ -53,8 +84,7 @@ const loadTab = async (key) => {
     if (key === 'overview') await loadOverview()
     else if (key === 'users') await loadUsers()
     else if (key === 'storage') await loadIntegrity()
-    else if (key === 'tags') await loadTags()
-    else await loadCollections()
+    else if (key === 'auditLogs') await loadAuditLogs()
   } finally {
     loading.value = false
   }
@@ -112,99 +142,46 @@ const doRelocate = async (dryRun) => {
   }
 }
 
-// ---------- 合集 ----------
-const newCollection = reactive({ name: '', description: '' })
-const addCollection = async () => {
-  if (!newCollection.name.trim()) {
-    showToast.warning('请输入合集名称')
-    return
-  }
-  try {
-    await createCollection(newCollection.name.trim(), newCollection.description.trim())
-    newCollection.name = ''
-    newCollection.description = ''
-    showToast('合集已创建')
-    await loadCollections()
-  } catch (e) {
-    showToast.error(e.message)
-  }
+// ---------- 看板图表（纯前端计算，不引入图表库） ----------
+const formatBytes = (n) => {
+  const v = Number(n) || 0
+  if (v < 1024) return `${v} B`
+  if (v < 1024 ** 2) return `${(v / 1024).toFixed(1)} KB`
+  if (v < 1024 ** 3) return `${(v / 1024 ** 2).toFixed(1)} MB`
+  return `${(v / 1024 ** 3).toFixed(2)} GB`
 }
-const removeCollection = async (row) => {
-  const ok = await confirmAction({
-    title: '删除合集',
-    message: `确认删除合集「${row.name}」？其下 ${row.videoCount} 部影片不会被删除，只会解除关联。`,
-  })
-  if (!ok) return
-  try {
-    await deleteCollection(row.id)
-    showToast('已删除')
-    await loadCollections()
-  } catch (e) {
-    showToast.error(e.message)
-  }
-}
+const trendMax = computed(() =>
+  Math.max(1, ...(overview.value?.viewTrend || []).map((p) => p.views)))
+const trendTotal = computed(() =>
+  (overview.value?.viewTrend || []).reduce((sum, p) => sum + p.views, 0))
+const hotTagMax = computed(() =>
+  Math.max(1, ...(overview.value?.hotTags || []).map((t) => t.videoCount)))
+const storagePoints = computed(() => overview.value?.storageGrowth?.points || [])
+const storageLine = computed(() => {
+  const pts = storagePoints.value
+  if (!pts.length) return ''
+  const max = Math.max(...pts.map((p) => p.cumulativeBytes), 1)
+  return pts.map((p, i) => {
+    const x = pts.length === 1 ? 0 : (i / (pts.length - 1)) * 600
+    const y = 110 - (p.cumulativeBytes / max) * 100
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+})
+const storageArea = computed(() =>
+  storageLine.value ? `0,120 ${storageLine.value} 600,120` : '')
+const trendFirst = computed(() => overview.value?.viewTrend?.[0]?.date || '')
+const trendLast = computed(() => {
+  const arr = overview.value?.viewTrend || []
+  return arr.length ? arr[arr.length - 1].date : ''
+})
+const storageFirst = computed(() => storagePoints.value[0]?.date || '')
+const storageLast = computed(() =>
+  storagePoints.value.length ? storagePoints.value[storagePoints.value.length - 1].date : '')
+const growthAddedVideos = computed(() =>
+  storagePoints.value.reduce((sum, p) => sum + p.addedVideos, 0))
+const growthAddedBytes = computed(() =>
+  storagePoints.value.reduce((sum, p) => sum + p.addedBytes, 0))
 
-// ---------- 标签管理：仅超管可增删改并发布，普通用户只能选用已发布标签 ----------
-const newTag = ref('')
-const addTag = async () => {
-  if (!newTag.value.trim()) {
-    showToast.warning('请输入标签名')
-    return
-  }
-  try {
-    await createTag(newTag.value.trim())
-    showToast(`标签「${newTag.value.trim()}」已创建（未发布），发布后普通用户可见`)
-    newTag.value = ''
-    await loadTags()
-  } catch (e) {
-    showToast.error(e.message)
-  }
-}
-
-const toggleTagPublish = async (row) => {
-  try {
-    await updateTag(row.id, { isPublished: !row.isPublished })
-    showToast(row.isPublished ? `「${row.name}」已下架，普通用户不再可选` : `「${row.name}」已发布`)
-    await loadTags()
-  } catch (e) {
-    showToast.error(e.message)
-  }
-}
-
-const editingTagId = ref(null) // 当前正在改名的标签 id
-const editingTagName = ref('')
-const startRenameTag = (row) => {
-  editingTagId.value = row.id
-  editingTagName.value = row.name
-}
-const confirmRenameTag = async () => {
-  const name = editingTagName.value.trim()
-  if (!name) return
-  try {
-    await updateTag(editingTagId.value, { name })
-    showToast('标签已改名')
-    editingTagId.value = null
-    await loadTags()
-  } catch (e) {
-    showToast.error(e.message)
-  }
-}
-const cancelRenameTag = () => { editingTagId.value = null }
-
-const removeTag = async (row) => {
-  const ok = await confirmAction({
-    title: '删除标签',
-    message: `确认删除标签「${row.name}」？影片与该标签的关联将一并解除，影片本身不受影响。`,
-  })
-  if (!ok) return
-  try {
-    await deleteTag(row.id)
-    showToast('已删除')
-    await loadTags()
-  } catch (e) {
-    showToast.error(e.message)
-  }
-}
 </script>
 
 <template>
@@ -216,7 +193,7 @@ const removeTag = async (row) => {
       </button>
       <div>
         <h1 class="admin-title">站点管理</h1>
-        <span class="admin-sub">超级管理员专属 · 数据、账号、存储与合集</span>
+        <span class="admin-sub">超级管理员专属 · 数据、账号、存储与操作审计</span>
       </div>
     </header>
 
@@ -246,6 +223,91 @@ const removeTag = async (row) => {
         <div class="stat-card"><span>近 7 天新增</span><b>{{ overview.addedLast7Days }}</b></div>
         <div class="stat-card"><span>平均审核时长</span><b>{{ overview.avgAuditHours === null ? '—' : overview.avgAuditHours + ' 小时' }}</b></div>
       </div>
+      <!-- ===== 运营趋势：观看趋势 / 热门标签 / 存储增长 ===== -->
+      <h3 class="block-title">运营趋势</h3>
+      <div class="grid grid-cols-1 gap-3.5 min-[900px]:grid-cols-2">
+        <!-- 近 14 天观看趋势 -->
+        <div class="chart-card">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <span class="chart-title"><FaIcon :icon="ICONS.chart" :fixed="false" class="text-nf-red" />近 14 天观看趋势</span>
+            <span class="text-[11px] text-nf-muted">累计 {{ trendTotal }} 次 · 按用户 / 影片 / 天去重</span>
+          </div>
+          <div class="mt-3 flex h-[118px] items-end gap-[5px]">
+            <div
+              v-for="p in overview.viewTrend"
+              :key="p.fullDate"
+              class="group flex h-full flex-1 items-end"
+              :title="`${p.fullDate}：${p.views} 次观看`"
+            >
+              <div
+                class="w-full rounded-t-[3px] transition-colors"
+                :class="p.views ? 'bg-nf-red/65 group-hover:bg-nf-red' : 'bg-white/10'"
+                :style="{ height: Math.max(3, (p.views / trendMax) * 100) + '%' }"
+              ></div>
+            </div>
+          </div>
+          <div class="mt-2 flex items-center justify-between text-[10.5px] text-nf-muted">
+            <span>{{ trendFirst }}</span>
+            <span>峰值 {{ trendMax }} 次 / 天</span>
+            <span>{{ trendLast }}</span>
+          </div>
+        </div>
+
+        <!-- 热门标签 Top 8 -->
+        <div class="chart-card">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <span class="chart-title"><FaIcon :icon="ICONS.taxonomy" :fixed="false" class="text-nf-red" />热门标签 Top 8</span>
+            <span class="text-[11px] text-nf-muted">按已发布标签的关联影片数</span>
+          </div>
+          <div v-if="overview.hotTags.length" class="mt-3 space-y-2">
+            <div v-for="(t, i) in overview.hotTags" :key="t.id" class="flex items-center gap-2.5">
+              <span class="w-4 shrink-0 text-[11px] tabular-nums text-nf-muted">{{ i + 1 }}</span>
+              <span class="w-[76px] shrink-0 truncate text-[12px] text-nf-text" :title="t.name">{{ t.name }}</span>
+              <div class="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+                <div
+                  class="h-full rounded-full bg-gradient-to-r from-nf-red/70 to-[#ff8a90]"
+                  :style="{ width: (t.videoCount / hotTagMax) * 100 + '%' }"
+                ></div>
+              </div>
+              <span class="w-14 shrink-0 text-right text-[11px] tabular-nums text-nf-sub">{{ t.videoCount }} 部</span>
+              <span class="w-16 shrink-0 text-right text-[11px] tabular-nums text-nf-muted">{{ t.totalViews }} 播放</span>
+            </div>
+          </div>
+          <div v-else class="mt-6 text-center text-[12px] text-nf-muted">暂无已发布标签的关联数据</div>
+        </div>
+      </div>
+
+      <!-- 近 30 天存储增长曲线 -->
+      <div class="chart-card mt-3.5">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <span class="chart-title"><FaIcon :icon="ICONS.hardDrive" :fixed="false" class="text-nf-red" />近 30 天存储增长</span>
+          <span class="text-[11px] text-nf-muted">
+            当前 {{ formatBytes(overview.storageGrowth.totalBytes) }} · {{ overview.storageGrowth.totalVideos }} 部影片
+          </span>
+        </div>
+        <svg viewBox="0 0 600 120" preserveAspectRatio="none" class="mt-3 h-[120px] w-full" role="img" aria-label="近 30 天累计存储占用曲线">
+          <defs>
+            <linearGradient id="nfStorageFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#e50914" stop-opacity="0.35" />
+              <stop offset="100%" stop-color="#e50914" stop-opacity="0.02" />
+            </linearGradient>
+          </defs>
+          <line v-for="y in [10, 60, 110]" :key="y" x1="0" :y1="y" x2="600" :y2="y" stroke="var(--nf-overlay-soft)" stroke-width="1" />
+          <polygon v-if="storageArea" :points="storageArea" fill="url(#nfStorageFill)" />
+          <polyline v-if="storageLine" :points="storageLine" fill="none" stroke="#e50914" stroke-width="2" vector-effect="non-scaling-stroke" />
+        </svg>
+        <div class="mt-2 flex items-center justify-between text-[10.5px] text-nf-muted">
+          <span>{{ storageFirst }}</span>
+          <span>期间新增 {{ growthAddedVideos }} 部 / {{ formatBytes(growthAddedBytes) }}</span>
+          <span>{{ storageLast }}</span>
+        </div>
+        <p class="block-hint mt-2">
+          口径：按影片入库日归属实际源文件大小并逐日累计；外链视频与磁盘上已找不到的文件不计字节
+          <template v-if="overview.storageGrowth.unmeasured">（{{ overview.storageGrowth.unmeasured }} 条未计量）</template>，
+          但仍计入影片数。曲线为累计占用，删除影片会使历史口径相应变化。
+        </p>
+      </div>
+
       <h3 class="block-title">热门影片 Top 5</h3>
       <table class="admin-table">
         <thead><tr><th>影片</th><th>播放</th><th>收藏</th></tr></thead>
@@ -333,74 +395,63 @@ const removeTag = async (row) => {
       </div>
     </section>
 
-    <!-- 合集 -->
-    <section v-else-if="tab === 'collections'" class="admin-section">
-      <div class="relocate-form">
-        <input v-model="newCollection.name" class="nf-input" placeholder="合集名称（如：星际穿越系列）" maxlength="100" />
-        <input v-model="newCollection.description" class="nf-input" placeholder="备注（可选）" maxlength="500" />
-        <button class="nf-btn red" @click="addCollection"><FaIcon :icon="ICONS.create" :fixed="false" />新建合集</button>
-      </div>
-      <div class="table-scroll my-3">
-        <table class="admin-table">
-          <thead><tr><th>名称</th><th>备注</th><th>影片数</th><th>操作</th></tr></thead>
-          <tbody>
-            <tr v-for="c in collections" :key="c.id">
-              <td>{{ c.name }}</td><td>{{ c.description || '—' }}</td><td>{{ c.videoCount }}</td>
-              <td><button class="nf-btn sm ghost danger" @click="removeCollection(c)"><FaIcon :icon="ICONS.remove" :fixed="false" />删除</button></td>
-            </tr>
-            <tr v-if="!collections.length"><td colspan="4" class="muted">暂无合集</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="block-hint">在「新增/编辑视频」表单里可为影片选择所属合集，列表页可按合集筛选。</p>
-    </section>
-
-    <!-- 标签管理 -->
-    <section v-else-if="tab === 'tags'" class="admin-section">
-      <p class="block-hint">标签由超级管理员统一创建、发布与删除；普通用户在新增/编辑视频时只能从<b>已发布</b>的标签中选择，无法自行创建。新建标签默认未发布，发布后才会出现在普通用户的可选项里。</p>
-      <div class="relocate-form">
+    <!-- 操作审计 -->
+    <section v-else-if="tab === 'auditLogs'" class="admin-section">
+      <p class="block-hint">
+        记录全站敏感管理动作：调整角色、创建账号、删除视频 / 合集 / 标签 / 类型、发布下架与路径重定位。
+        只追加、不可修改；操作人与对象均保存名称快照，账号或对象删除后历史仍可追溯。
+        合集已接入审核模型，统一在导航「更多 → 标签 / 类型管理」工作台的「合集」分页中提交与审核，此处不再重复提供管理入口。
+      </p>
+      <div class="relocate-form mb-3">
         <input
-          v-model="newTag"
+          v-model="auditKeyword"
           class="nf-input"
-          placeholder="新标签名称（如：科幻 / 高分）"
+          placeholder="搜索操作人 / 对象 / 详情"
           maxlength="50"
-          @keyup.enter="addTag"
+          @keyup.enter="searchAuditLogs"
         />
-        <button class="nf-btn red" @click="addTag"><FaIcon :icon="ICONS.create" :fixed="false" />新建标签</button>
+        <select v-model="auditAction" class="admin-select" @change="searchAuditLogs">
+          <option value="">全部动作</option>
+          <option v-for="a in auditActionOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
+        </select>
+        <select v-model.number="auditDays" class="admin-select" @change="searchAuditLogs">
+          <option :value="0">全部时间</option>
+          <option :value="7">近 7 天</option>
+          <option :value="30">近 30 天</option>
+          <option :value="90">近 90 天</option>
+        </select>
+        <button class="nf-btn ghost" @click="searchAuditLogs"><FaIcon :icon="ICONS.search" :fixed="false" />搜索</button>
+        <button class="nf-btn ghost" @click="resetAuditFilters"><FaIcon :icon="ICONS.reset" :fixed="false" />重置</button>
       </div>
-      <div class="table-scroll my-3">
+      <div class="table-scroll">
         <table class="admin-table">
-          <thead><tr><th>标签名</th><th>状态</th><th>操作</th></tr></thead>
+          <thead><tr><th>时间</th><th>动作</th><th>对象</th><th>详情</th><th>操作人</th><th>角色</th></tr></thead>
           <tbody>
-            <tr v-for="t in tags" :key="t.id">
+            <tr v-for="l in auditLogs" :key="l.id">
+              <td class="whitespace-nowrap text-[12px] text-nf-muted">{{ l.createdAt }}</td>
+              <td><span class="audit-action">{{ l.actionText }}</span></td>
               <td>
-                <template v-if="editingTagId === t.id">
-                  <input
-                    v-model="editingTagName"
-                    class="nf-input tag-edit-input"
-                    maxlength="50"
-                    @keyup.enter="confirmRenameTag"
-                    @keyup.esc="cancelRenameTag"
-                  />
-                  <button class="nf-btn sm red" @click="confirmRenameTag"><FaIcon :icon="ICONS.check" :fixed="false" />确定</button>
-                  <button class="nf-btn sm ghost" @click="cancelRenameTag"><FaIcon :icon="ICONS.close" :fixed="false" />取消</button>
-                </template>
-                <template v-else>{{ t.name }}</template>
+                <span class="text-nf-text">{{ l.targetName || '—' }}</span>
+                <span class="text-[11px] text-nf-muted">（{{ l.targetTypeText }}）</span>
               </td>
-              <td>
-                <span :class="t.isPublished ? 'good' : 'warn-dim'">{{ t.isPublished ? '已发布' : '未发布' }}</span>
-              </td>
-              <td>
-                <button class="nf-btn sm ghost" @click="toggleTagPublish(t)">
-                  {{ t.isPublished ? '下架' : '发布' }}
-                </button>
-                <button class="nf-btn sm ghost" @click="startRenameTag(t)"><FaIcon :icon="ICONS.edit" :fixed="false" />改名</button>
-                <button class="nf-btn sm ghost danger" @click="removeTag(t)"><FaIcon :icon="ICONS.remove" :fixed="false" />删除</button>
-              </td>
+              <td>{{ l.detail || '—' }}</td>
+              <td class="whitespace-nowrap">{{ l.operatorName }}</td>
+              <td class="whitespace-nowrap text-[12px] text-nf-muted">{{ ROLE_TEXT[l.operatorRole] || l.operatorRole || '—' }}</td>
             </tr>
-            <tr v-if="!tags.length"><td colspan="3" class="muted">暂无标签</td></tr>
+            <tr v-if="!auditLogs.length"><td colspan="6" class="muted">暂无匹配的操作记录</td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="audit-pager">
+        <span>共 {{ auditTotal }} 条 · 第 {{ auditPage }} / {{ auditPageCount }} 页</span>
+        <div class="flex items-center gap-2">
+          <button class="nf-btn ghost sm" :disabled="auditPage <= 1" @click="changeAuditPage(-1)">
+            <FaIcon :icon="ICONS.prev" :fixed="false" />上一页
+          </button>
+          <button class="nf-btn ghost sm" :disabled="auditPage >= auditPageCount" @click="changeAuditPage(1)">
+            下一页<FaIcon :icon="ICONS.next" :fixed="false" />
+          </button>
+        </div>
       </div>
     </section>
   </div>
@@ -409,12 +460,12 @@ const removeTag = async (row) => {
 <style scoped>
 .admin-page { max-width: 1200px; margin: 0 auto; padding: 26px 40px 60px; }
 .admin-head { display: flex; gap: 16px; margin-bottom: 24px; }
-.back-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 15px; border: none; border-radius: 5px; background: rgba(255,255,255,.12); color: #f5f5f5; font-size: 13px; font-weight: 600; cursor: pointer; }
-.back-btn:hover { background: rgba(255,255,255,.22); }
+.back-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 15px; border: none; border-radius: 5px; background: var(--nf-overlay); color: var(--nf-text-primary); font-size: 13px; font-weight: 600; cursor: pointer; }
+.back-btn:hover { background: var(--nf-overlay-strong); }
 .admin-title { margin: 0 0 4px; font-size: 24px; font-weight: 800; letter-spacing: 1px; color: #fff; }
 .admin-sub { font-size: 12.5px; color: var(--nf-text-muted); }
 .admin-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; border-bottom: 1px solid #2a2a30; padding-bottom: 12px; }
-.tab-btn { padding: 7px 18px; border: 1px solid #33333a; border-radius: 5px; background: #1b1b1f; color: #b3b3b3; font-size: 13px; cursor: pointer; }
+.tab-btn { padding: 7px 18px; border: 1px solid #33333a; border-radius: 5px; background: #1b1b1f; color: var(--nf-text-secondary); font-size: 13px; cursor: pointer; }
 .tab-btn:hover { color: #fff; }
 .tab-btn.on { background: var(--nf-red); border-color: var(--nf-red); color: #fff; font-weight: 700; }
 .admin-loading { display: flex; justify-content: center; padding: 60px 0; }
@@ -425,27 +476,33 @@ const removeTag = async (row) => {
 .stat-card span { font-size: 12.5px; color: var(--nf-text-muted); }
 .stat-card b { font-size: 24px; color: #fff; }
 .stat-card b.warn { color: #e6a01e; } .stat-card b.good { color: #46d369; } .stat-card b.bad { color: var(--nf-red); }
-.block-title { margin: 24px 0 12px; font-size: 16px; font-weight: 700; color: #f5f5f5; }
+.block-title { margin: 24px 0 12px; font-size: 16px; font-weight: 700; color: var(--nf-text-primary); }
 .block-hint { font-size: 12.5px; line-height: 1.8; color: var(--nf-text-muted); margin: 8px 0 16px; }
-.block-hint b { color: #d2d2d2; }
+.block-hint b { color: var(--nf-text-secondary); }
 .block-hint code { color: #e6a01e; }
 .table-scroll { overflow-x: auto; border: 1px solid #2c2c33; border-radius: 8px; }
 .admin-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; }
 .admin-table th { padding: 11px 14px; text-align: left; color: #8b8b92; font-weight: 600; background: #1b1b1f; border-bottom: 1px solid #2c2c33; white-space: nowrap; }
-.admin-table td { padding: 11px 14px; color: #d8d8d8; border-bottom: 1px solid #24242a; }
+.admin-table td { padding: 11px 14px; color: var(--nf-text-secondary); border-bottom: 1px solid #24242a; }
 .admin-table tr:last-child td { border-bottom: none; }
-.admin-table code { font-size: 12px; color: #b3b3b3; word-break: break-all; }
+.admin-table code { font-size: 12px; color: var(--nf-text-secondary); word-break: break-all; }
 .muted { color: var(--nf-text-muted); text-align: center; }
 .good { color: #46d369; } .bad { color: var(--nf-red); }
 .warn-dim { color: #e6a01e; }
 .tag-edit-input { display: inline-block; width: 180px; height: 30px; margin-right: 8px; }
-.admin-select { height: 34px; padding: 0 8px; border: 1px solid #38383f; border-radius: 4px; background: #202025; color: #e5e5e5; font-size: 12.5px; }
-.integrity-summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; color: #d2d2d2; }
+.admin-select { height: 34px; padding: 0 8px; border: 1px solid #38383f; border-radius: 4px; background: #202025; color: var(--nf-text-primary); font-size: 12.5px; }
+.integrity-summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--nf-text-secondary); }
 .integrity-summary b { color: #fff; }
 .root-list { display: flex; flex-direction: column; gap: 6px; padding-left: 18px; margin: 0; }
 .root-list code { font-size: 12.5px; color: #9fd0ff; word-break: break-all; }
 .relocate-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .relocate-form .nf-input { flex: 1 1 260px; }
-.relocate-result { margin-top: 12px; font-size: 13px; color: #d2d2d2; }
-@media (max-width: 700px) { .admin-page { padding: 18px 16px 40px; } }
+.relocate-result { margin-top: 12px; font-size: 13px; color: var(--nf-text-secondary); }
+/* 运营趋势图表 / 操作审计 */
+.chart-card { padding: 16px 18px; border: 1px solid #2c2c33; border-radius: 8px; background: #161619; }
+.chart-title { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 700; color: var(--nf-text-primary); }
+.audit-action { display: inline-block; padding: 3px 8px; border-radius: 4px; background: rgba(229,9,20,.12); color: #ff8a90; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.audit-pager { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 14px; font-size: 12.5px; color: var(--nf-text-muted); }
+.audit-pager .nf-btn:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 700px) { .admin-page { padding: 18px 16px 40px; } .chart-card { padding: 14px; } }
 </style>

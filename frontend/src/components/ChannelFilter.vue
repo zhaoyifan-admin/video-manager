@@ -1,11 +1,13 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import FaIcon from '../ui/FaIcon.vue'
 import { ICONS } from '../composables/icons'
 import { ROW_LABEL, CHANNEL_ICON } from '../composables/channelPresets'
 
 // 频道筛选面板：频道头图 + 多维筛选行 + 排序 Tab
 // 样式铁律：本组件全部使用 Tailwind 工具类，不写任何 scoped CSS。
+// 移动端（≤900px）多维筛选行默认收起：电影等频道 4~6 行条件在窄屏会把海报墙整个推出首屏。
+// 显隐完全交给 max-[900px]: 断点类，JS 只记录用户是否手动展开，桌面端始终常显、无闪烁。
 const props = defineProps({
   preset: { type: Object, required: true },
   channelName: { type: String, default: '' },
@@ -32,13 +34,13 @@ const SORT_ICON = {
 //       因此每个按钮都必须显式 bg-transparent + border-0。
 const IDLE_CHIP =
   'shrink-0 border-0 bg-transparent px-2.5 py-[3px] rounded-[3px] text-[12.5px] leading-[22px] ' +
-  'cursor-pointer select-none text-nf-sub transition-colors hover:bg-white/5 hover:text-white'
+  'cursor-pointer select-none text-nf-sub transition-colors hover:bg-white/5 hover:text-nf-text'
 const ON_CHIP =
   'shrink-0 border-0 px-2.5 py-[3px] rounded-[3px] text-[12.5px] leading-[22px] font-semibold ' +
   'cursor-pointer select-none bg-nf-red text-white'
 const IDLE_SORT =
   'relative flex-1 border-0 bg-transparent py-3 text-center text-[14px] cursor-pointer select-none ' +
-  'text-nf-sub transition-colors hover:text-white'
+  'text-nf-sub transition-colors hover:text-nf-text'
 const ON_SORT =
   'relative flex-1 border-0 bg-transparent py-3 text-center text-[14px] font-bold ' +
   'cursor-pointer select-none text-nf-red'
@@ -98,7 +100,12 @@ const rows = computed(() =>
 
 const isOn = (row, opt) => row.value === opt.value
 
+// 移动端默认收起；选中任一条件（含切换频道）后自动收起，让结果立即回到视野。
+// 桌面端不读这个值，所以这里置 false 不会产生任何视觉变化。
+const filterOpen = ref(false)
+
 const choose = (row, opt) => {
+  filterOpen.value = false
   if (row.key === 'channel') {
     emit('select-channel', opt.value)
     return
@@ -110,15 +117,29 @@ const choose = (row, opt) => {
 
 const chooseSort = (s) => emit('apply', { page: 1, sort: s.value })
 
-const hasFilters = computed(() => {
-  const q = props.query
-  return !!(q.tagId || q.collectionId || q.region || q.language || q.year || q.letter)
-})
+const FILTER_FIELDS = ['tagId', 'collectionId', 'region', 'language', 'year', 'letter']
+const activeFilterCount = computed(() =>
+  FILTER_FIELDS.filter((k) => {
+    const v = props.query[k]
+    return v !== 0 && v !== '' && v !== undefined && v !== null
+  }).length,
+)
+const hasFilters = computed(() => activeFilterCount.value > 0)
+
+// 收起态的简短摘要：只展示已生效维度的「维度·选项」，避免用户忘记自己筛过什么。
+const activeSummary = computed(() =>
+  rows.value
+    .filter((row) => row.key !== 'channel')
+    .flatMap((row) => {
+      const opt = row.options.find((o) => o.value === row.value)
+      return opt && opt.label !== '全部' ? [`${row.label}·${opt.label}`] : []
+    }),
+)
 </script>
 
 <template>
   <section
-    class="mb-6 overflow-hidden rounded-xl border border-white/[0.07] bg-[#101013]"
+    class="mb-6 overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--nf-bg-card)]"
   >
     <!-- ===== 频道头图：每个频道配色 / 图标 / 文案不同（首页已有 Hero，跳过） ===== -->
     <div
@@ -162,39 +183,77 @@ const hasFilters = computed(() => {
       class="px-7 max-[900px]:px-5"
       :class="preset.minimal ? 'pb-3 pt-3' : 'pb-4 pt-5'"
     >
-      <div
-        v-for="row in rows"
-        :key="row.key"
-        class="flex items-start gap-3 border-b border-white/[0.04] py-[7px] last:border-b-0 max-[900px]:flex-col max-[900px]:gap-1"
-      >
-        <span
-          class="w-11 shrink-0 pt-[3px] text-[12.5px] font-semibold tracking-[1px] text-nf-muted"
+      <!-- ===== 移动端筛选开关：≤900px 默认收起，桌面端不渲染 ===== -->
+      <div class="mb-3 hidden items-center gap-2 max-[900px]:flex">
+        <button
+          class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-nf-line bg-white/[0.03] px-3 py-2.5 text-left transition-colors hover:border-nf-red"
+          :aria-expanded="filterOpen"
+          aria-controls="channel-filter-rows"
+          @click="filterOpen = !filterOpen"
         >
-          {{ row.label }}
-        </span>
-        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
-          <button
-            v-for="opt in row.options"
-            :key="`${row.key}-${opt.value}`"
-            :class="isOn(row, opt) ? ON_CHIP : IDLE_CHIP"
-            @click="choose(row, opt)"
-          >
-            {{ opt.label }}
-          </button>
+          <FaIcon :icon="ICONS.filter" :fixed="false" class="shrink-0 text-[12px] text-nf-red" />
+          <span class="shrink-0 text-[13px] font-semibold text-nf-text">筛选</span>
           <span
-            v-if="row.key === 'genre' && row.options.length === 1"
-            class="ml-1 text-[12px] text-nf-muted"
-          >
-            暂无已发布标签，可在「更多 → 标签 / 类型管理」中新增
+            v-if="activeFilterCount"
+            class="shrink-0 rounded-full bg-nf-red px-1.5 text-[10px] font-bold leading-4 text-white"
+          >{{ activeFilterCount }}</span>
+          <span class="min-w-0 flex-1 truncate text-[11.5px] text-nf-muted">
+            {{ activeSummary.length ? activeSummary.slice(0, 2).join(' · ') : '按标签 / 地区 / 年份等条件定位' }}
           </span>
-        </div>
+          <FaIcon
+            :icon="ICONS.caretDown"
+            :fixed="false"
+            class="shrink-0 text-[11px] text-nf-sub transition-transform duration-200"
+            :class="filterOpen ? 'rotate-180' : ''"
+          />
+        </button>
+        <button
+          v-if="hasFilters"
+          class="shrink-0 rounded-lg border border-nf-line bg-transparent px-2.5 py-2.5 text-[12px] text-nf-sub transition-colors hover:border-nf-red hover:text-nf-text"
+          @click="emit('reset')"
+        >
+          清除
+        </button>
       </div>
 
-      <!-- 筛选口径说明：让「模糊匹配」维度可预期 -->
-      <p v-if="!preset.minimal" class="mt-3 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-nf-muted">
-        <FaIcon :icon="ICONS.info" :fixed="false" class="mt-[3px] text-[11px]" />
-        <span>筛选口径：类型 / 合集按库内标签与合集精确匹配；地区、语言按标题或备注关键词匹配；年份按入库年份；字母按标题首字母。</span>
-      </p>
+      <div
+        id="channel-filter-rows"
+        :class="filterOpen ? 'max-[900px]:block nf-enter' : 'max-[900px]:hidden'"
+      >
+        <div
+          v-for="row in rows"
+          :key="row.key"
+          class="flex items-start gap-3 border-b border-white/[0.04] py-[7px] last:border-b-0 max-[900px]:flex-col max-[900px]:gap-1"
+        >
+          <span
+            class="w-11 shrink-0 pt-[3px] text-[12.5px] font-semibold tracking-[1px] text-nf-muted"
+          >
+            {{ row.label }}
+          </span>
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
+            <button
+              v-for="opt in row.options"
+              :key="`${row.key}-${opt.value}`"
+              :class="isOn(row, opt) ? ON_CHIP : IDLE_CHIP"
+              @click="choose(row, opt)"
+            >
+              {{ opt.label }}
+            </button>
+            <span
+              v-if="row.key === 'genre' && row.options.length === 1"
+              class="ml-1 text-[12px] text-nf-muted"
+            >
+              暂无已发布标签，可在「更多 → 标签 / 类型管理」中新增
+            </span>
+          </div>
+        </div>
+
+        <!-- 筛选口径说明：让「模糊匹配」维度可预期 -->
+        <p v-if="!preset.minimal" class="mt-3 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-nf-muted">
+          <FaIcon :icon="ICONS.info" :fixed="false" class="mt-[3px] text-[11px]" />
+          <span>筛选口径：类型 / 合集按库内标签与合集精确匹配；地区、语言按标题或备注关键词匹配；年份按入库年份；字母按标题首字母。</span>
+        </p>
+      </div>
     </div>
 
     <!-- ===== 排序 Tab：不同频道可配置不同排序项 ===== -->
@@ -217,7 +276,7 @@ const hasFilters = computed(() => {
       </button>
       <button
         v-if="hasFilters"
-        class="ml-4 inline-flex shrink-0 items-center rounded border border-white/15 bg-transparent px-3 py-1 text-[12px] text-nf-sub transition-colors hover:border-nf-red hover:text-white"
+        class="ml-4 inline-flex shrink-0 items-center rounded border border-white/15 bg-transparent px-3 py-1 text-[12px] text-nf-sub transition-colors hover:border-nf-red hover:text-nf-text max-[900px]:hidden"
         @click="emit('reset')"
       >
         <FaIcon :icon="ICONS.reset" :fixed="false" class="mr-1.5" />重置筛选

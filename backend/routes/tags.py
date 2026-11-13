@@ -11,6 +11,7 @@
 from flask import Blueprint, g, request
 
 import db
+from admin_audit_logs import record
 from auth import (
     can_audit,
     is_super_admin,
@@ -156,6 +157,11 @@ def update_tag(tag_id):
     # 留痕放在 UPDATE 成功之后，避免写入与实际状态不一致的孤立记录
     if auto_approved:
         add_log(tag_id, "auto_approve", row["audit_status"], 1, g.user["id"], g.user["username"])
+    if any("is_published" in u for u in updates):
+        record(g.user, "toggle_publish", "tag", tag_id, name or row["name"],
+               "发布" if data.get("isPublished") else "下架")
+    elif any("name" in u for u in updates):
+        record(g.user, "rename", "tag", tag_id, name, f"{row['name']} → {name}")
     return ok(_serialize(_fetch_row(tag_id), g.user["id"], True))
 
 
@@ -235,6 +241,7 @@ def delete_tag(tag_id):
     ):
         return fail("仅管理员可删除已发布标签，或创建者可删除自己待审核 / 已驳回的标签", 403)
     db.execute("DELETE FROM tags WHERE id = %s", (tag_id,))  # 关联表由外键级联清理
+    record(g.user, "delete_tag", "tag", tag_id, row["name"])
     return ok()
 
 

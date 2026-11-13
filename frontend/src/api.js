@@ -111,6 +111,13 @@ export const recordView = (id) => http.post(`/videos/${id}/view`)
 // 切换收藏状态（按当前用户记录，返回 {isFavorite, favoriteCount}）
 export const toggleFavorite = (id) => http.post(`/videos/${id}/favorite`)
 
+// ===== 影片互动：评分 / 想看清单 / 相关推荐（与收藏相互独立） =====
+export const getEngagement = (id) => http.get(`/videos/${id}/engagement`)
+export const rateVideo = (id, score) => http.put(`/videos/${id}/rating`, { score })
+export const toggleWantToWatch = (id) => http.post(`/videos/${id}/watchlist`)
+export const getRecommendations = (id, limit = 8) =>
+  http.get(`/videos/${id}/recommendations`, { params: { limit } })
+
 // 切换公开状态（设为公开后所有用户可观看，需先通过审核）
 export const togglePublic = (id) => http.post(`/videos/${id}/public`)
 
@@ -161,11 +168,39 @@ export const getIntegrity = () => http.get('/videos/integrity')
 export const relocateVideos = (oldPrefix, newPrefix, dryRun = true) =>
   http.post('/videos/relocate', { oldPrefix, newPrefix, dryRun })
 
-// ---------- 合集 ----------
+// ---------- 合集（已接入审核模型，与标签 / 类型一致） ----------
+// 列表保持 {items} 契约（供视频筛选下拉）；工作台需要纯数组，另给一个适配
 export const listCollections = () => http.get('/collections')
-export const createCollection = (name, description = '') =>
-  http.post('/collections', { name, description })
+export const listCollectionsForWorkbench = async () => (await listCollections()).items
+export const createCollection = (name, description = '', isPublished = false) =>
+  http.post('/collections', { name, description, isPublished })
+// 工作台提交：管理员可传 isPublished 直接发布（免审通过），普通用户进入待审核
+export const submitCollection = (name, isPublished = false) =>
+  http.post('/collections', { name, isPublished })
+export const updateCollection = (id, data) => http.put(`/collections/${id}`, data)
 export const deleteCollection = (id) => http.delete(`/collections/${id}`)
+export const reviewCollection = (id, action, reason = '') =>
+  http.post(`/collections/${id}/review`, { action, reason })
+export const resubmitCollection = (id) => http.post(`/collections/${id}/resubmit`)
+export const getCollectionLogs = (id) => http.get(`/collections/${id}/logs`)
 
-// ---------- 管理员看板 ----------
+// ---------- 用户自建片单（与系统合集隔离） ----------
+// 列表/创建/重命名/删除 + 加入/移除视频 + 查询某视频已在哪些片单
+export const listPlaylists = () => http.get('/playlists')
+export const createPlaylist = (name, description = '') =>
+  http.post('/playlists', { name, description })
+export const updatePlaylist = (id, name, description = '') =>
+  http.put(`/playlists/${id}`, { name, description })
+export const deletePlaylist = (id) => http.delete(`/playlists/${id}`)
+export const addVideoToPlaylist = (playlistId, videoId) =>
+  http.post(`/playlists/${playlistId}/videos`, { videoId })
+export const removeVideoFromPlaylist = (playlistId, videoId) =>
+  http.delete(`/playlists/${playlistId}/videos/${videoId}`)
+// 返回当前用户片单列表，并标注每个片单是否已含该视频（用于勾选态）
+export const getPlaylistsForVideo = (videoId) => http.get(`/playlists/for-video/${videoId}`)
+
+// ---------- 管理员看板 / 操作审计 ----------
+// overview 额外返回 viewTrend(近 14 天) / hotTags(Top8) / storageGrowth(近 30 天)
 export const getAdminOverview = () => http.get('/admin/overview')
+// 敏感管理动作流水（仅超管）：支持 keyword / action / targetType / days / page / pageSize
+export const listAdminLogs = (params) => http.get('/admin-logs', { params })

@@ -17,6 +17,10 @@ export const ICONS = {
   submissions: 'bell',
   create: 'plus',
   more: 'ellipsis',
+  menu: 'bars',
+  caretDown: 'caret-down',
+  themeLight: 'sun',
+  themeDark: 'moon',
   admin: 'gear',
   taxonomy: 'tags',
   batch: 'file-import',
@@ -41,6 +45,12 @@ export const ICONS = {
   video: 'file-video',
   cover: 'image',
   collection: 'layer-group',
+  playlist: 'list-ul',
+  playlistAdd: 'plus',
+  wantlist: 'bookmark',
+  recommend: 'wand-magic-sparkles',
+  cast: 'display',
+  copy: 'copy',
   auditLog: 'clock-rotate-left',
 
   // ===== 通用动作 / 状态 =====
@@ -82,6 +92,7 @@ export const ICONS = {
   next: 'angle-right',
   chevronLeft: 'chevron-left',
   chevronRight: 'chevron-right',
+  chevronUp: 'chevron-up',
   backward: 'backward',
   forward: 'forward',
 

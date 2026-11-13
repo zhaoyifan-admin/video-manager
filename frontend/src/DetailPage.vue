@@ -35,12 +35,28 @@
               立即播放
             </button>
             <button
-              class="nf-btn ghost lg"
+              class="nf-btn ghost lg nf-on-media"
               :class="{ faved: video.isFavorite }"
               @click="toggleFav"
             >
               <FaIcon :icon="ICONS.fav" :variant="video.isFavorite ? 'solid' : 'regular'" :fixed="false" />
               {{ video.isFavorite ? '已收藏' : '收藏' }}
+            </button>
+            <button class="nf-btn ghost lg nf-on-media" @click="playlistOpen = true">
+              <FaIcon :icon="ICONS.playlist" :fixed="false" class="text-[16px]" />
+              加入片单
+            </button>
+            <button
+              class="nf-btn ghost lg nf-on-media"
+              :class="{ faved: engagement.isWantToWatch }"
+              @click="toggleWant"
+            >
+              <FaIcon
+                :icon="ICONS.wantlist"
+                :variant="engagement.isWantToWatch ? 'solid' : 'regular'"
+                :fixed="false"
+              />
+              {{ engagement.isWantToWatch ? '已想看' : '想看' }}
             </button>
           </div>
         </div>
@@ -74,23 +90,144 @@
           <span class="info-value">{{ video.updatedAt }}</span>
         </div>
       </div>
+
+      <!-- 评分：本人星级可改，均分与评分人数是全体用户的聚合值 -->
+      <div class="mt-6 rounded-xl border border-nf-line bg-nf-elevated px-6 py-5 max-[600px]:px-4">
+        <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <span class="text-[13px] font-semibold text-nf-sub">我的评分</span>
+          <div class="flex items-center gap-1" @mouseleave="hoverScore = 0">
+            <button
+              v-for="n in 5"
+              :key="n"
+              class="border-0 bg-transparent px-[3px] text-[21px] leading-none cursor-pointer transition-colors hover:scale-110"
+              :class="n <= (hoverScore || engagement.myScore) ? 'text-nf-amber' : 'text-nf-muted'"
+              :title="`${n} 星`"
+              :aria-label="`${n} 星`"
+              @mouseenter="hoverScore = n"
+              @click="submitRating(n)"
+            >
+              <FaIcon
+                :icon="ICONS.star"
+                :variant="n <= (hoverScore || engagement.myScore) ? 'solid' : 'regular'"
+                :fixed="false"
+              />
+            </button>
+            <button
+              v-if="engagement.myScore"
+              class="ml-2 border-0 bg-transparent text-[12px] text-nf-muted cursor-pointer hover:text-nf-text"
+              @click="submitRating(0)"
+            >
+              撤销评分
+            </button>
+          </div>
+          <span class="text-[12.5px] text-nf-sub">
+            均分 <b class="text-[16px] text-nf-amber tabular-nums">{{ Number(engagement.avgScore).toFixed(1) }}</b>
+            <span class="ml-1">· {{ engagement.ratingCount }} 人评分</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- 看了这个也看：按标签重合 / 同类型 / 同合集排序，横向滑动 -->
+      <section v-if="recommendations.length" class="mt-8">
+        <h2 class="mb-3 flex items-center gap-2 text-[18px] font-bold text-nf-text">
+          <FaIcon :icon="ICONS.recommend" :fixed="false" class="text-[16px] text-nf-red" />
+          看了这个也看
+        </h2>
+        <div class="nf-scroll-x flex gap-3 overflow-x-auto pb-2">
+          <button
+            v-for="row in recommendations"
+            :key="row.id"
+            class="group w-[148px] shrink-0 overflow-hidden rounded-lg border border-nf-line bg-nf-card text-left cursor-pointer transition-colors hover:border-nf-red"
+            @click="openRecommendation(row)"
+          >
+            <div class="relative aspect-[2/3] overflow-hidden" :class="`cover-tone-${row.id % 6}`">
+              <img
+                v-if="row.filePath && !/^https?:\/\//.test(row.filePath)"
+                :src="`/api/videos/${row.id}/thumb`"
+                class="h-full w-full object-cover"
+                alt=""
+                @error="hideCover"
+              />
+              <span class="absolute bottom-1.5 left-1.5 rounded bg-black/65 px-1.5 py-[1px] text-[10px] text-white/85 backdrop-blur-sm">
+                {{ row.recommendReason }}
+              </span>
+            </div>
+            <div class="px-2 py-2">
+              <div class="truncate text-[12.5px] font-semibold text-nf-text">{{ row.title }}</div>
+              <div class="mt-0.5 truncate text-[11px] text-nf-muted">
+                {{ row.avgScore ? `${Number(row.avgScore).toFixed(1)} 分` : '暂无评分' }} · {{ row.viewCount }} 次播放
+              </div>
+            </div>
+          </button>
+        </div>
+      </section>
     </template>
   </div>
+
+  <AddToPlaylistModal v-model="playlistOpen" :video-id="video?.id || 0" />
 </template>
 
 <script setup>
 import { ICONS } from './composables/icons'
 import FaIcon from './ui/FaIcon.vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from './ui/toast'
-import { getVideo, toggleFavorite } from './api'
+import {
+  getVideo, toggleFavorite, getEngagement, rateVideo,
+  toggleWantToWatch, getRecommendations,
+} from './api'
+import AddToPlaylistModal from './components/AddToPlaylistModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 
 const video = ref(null)
 const error = ref('')
+const playlistOpen = ref(false)
+
+// 影片互动：评分 / 想看（与收藏分离）+ 相关推荐
+const engagement = ref({ avgScore: 0, ratingCount: 0, myScore: 0, isWantToWatch: false })
+const recommendations = ref([])
+const hoverScore = ref(0)
+
+const loadEngagement = async (id) => {
+  try {
+    engagement.value = await getEngagement(id)
+  } catch {
+    engagement.value = { avgScore: 0, ratingCount: 0, myScore: 0, isWantToWatch: false }
+  }
+}
+
+const loadRecommendations = async (id) => {
+  try {
+    recommendations.value = (await getRecommendations(id)).items || []
+  } catch {
+    recommendations.value = []
+  }
+}
+
+const submitRating = async (score) => {
+  try {
+    engagement.value = await rateVideo(video.value.id, score)
+    showToast(score ? `已评 ${score} 星` : '已撤销评分')
+  } catch (e) {
+    showToast.error(e.message)
+  }
+}
+
+const toggleWant = async () => {
+  try {
+    engagement.value = await toggleWantToWatch(video.value.id)
+    showToast(engagement.value.isWantToWatch ? '已加入想看清单' : '已从想看清单移除')
+  } catch (e) {
+    showToast.error(e.message)
+  }
+}
+
+const openRecommendation = (row) => router.push({ name: 'detail', params: { id: row.id } })
+// 外链视频没有本地缩略图，图片加载失败时退回占位渐变
+const hideCover = (e) => { e.target.style.display = 'none' }
 
 // 详情页封面：优先后端 ffmpeg 缩略图，失败（外链等）则用占位渐变
 const coverUrl = ref('')
@@ -112,10 +249,15 @@ const goPlay = () => {
 const load = async () => {
   error.value = ''
   video.value = null
+  coverUrl.value = ''
+  hoverScore.value = 0
   try {
-    video.value = await getVideo(route.params.id)
+    const id = route.params.id
+    video.value = await getVideo(id)
     document.title = `${video.value.title} - 影片详情`
     loadCover()
+    loadEngagement(id)
+    loadRecommendations(id)
   } catch (e) {
     error.value = e.message
   }
@@ -137,6 +279,8 @@ const toggleFav = async () => {
 }
 
 onMounted(load)
+// 从推荐行跳到另一部影片时组件会复用，需按新的路由参数重新拉取
+watch(() => route.params.id, (id) => { if (id) load() })
 </script>
 
 <style scoped>
@@ -163,8 +307,8 @@ onMounted(load)
   padding: 0 15px;
   border: none;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #f5f5f5;
+  background: var(--nf-overlay);
+  color: var(--nf-text-primary);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -173,7 +317,7 @@ onMounted(load)
 }
 
 .back-btn:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--nf-overlay-strong);
 }
 
 .page-title {
@@ -200,7 +344,7 @@ onMounted(load)
 .error-title {
   font-size: 16px;
   font-weight: 700;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
 }
 
 .error-sub {
@@ -275,11 +419,11 @@ onMounted(load)
 
 .hero-chip {
   padding: 2px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 1px solid var(--nf-overlay-strong);
   border-radius: 14px;
   font-size: 12px;
   line-height: 18px;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--nf-text-primary);
   backdrop-filter: blur(2px);
 }
 
@@ -288,7 +432,7 @@ onMounted(load)
   max-width: 640px;
   font-size: 14px;
   line-height: 1.75;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--nf-text-primary);
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -321,7 +465,7 @@ onMounted(load)
   padding: 9px 0;
   font-size: 13.5px;
   line-height: 1.6;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--nf-overlay-soft);
 }
 
 .info-row:last-child {
@@ -337,7 +481,7 @@ onMounted(load)
 .info-value {
   flex: 1;
   min-width: 0;
-  color: #e5e5e5;
+  color: var(--nf-text-primary);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -357,11 +501,11 @@ onMounted(load)
   margin-bottom: 4px;
   padding: 1px 10px;
   border-radius: 10px;
-  background: #26262b;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--nf-bg-elevated);
+  border: 1px solid var(--nf-overlay);
   font-size: 12px;
   line-height: 18px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--nf-text-primary);
 }
 
 @media (max-width: 700px) {

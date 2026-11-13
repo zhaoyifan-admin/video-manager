@@ -368,7 +368,7 @@ const submitForm = async () => {
   align-items: center;
   gap: 8px;
   font-size: 13.5px;
-  color: #f5f5f5;
+  color: var(--nf-text-primary);
   cursor: pointer;
   user-select: none;
 }
@@ -417,11 +417,11 @@ const submitForm = async () => {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: #1f1f23;
+  background: var(--nf-bg-elevated);
   border: 1px solid #333338;
   border-radius: 5px;
   font-size: 12.5px;
-  color: #e5e5e5;
+  color: var(--nf-text-primary);
 }
 
 .picked-name {
@@ -438,7 +438,7 @@ const submitForm = async () => {
   height: 18px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--nf-overlay);
   color: #9a9aa2;
   font-size: 10px;
   cursor: pointer;

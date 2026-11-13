@@ -88,7 +88,7 @@ onUnmounted(stopHero)
             <FaIcon :icon="ICONS.play" :fixed="false" class="text-[18px]" />
             立即播放
           </button>
-          <button class="nf-btn ghost lg" @click="$emit('detail', v)"><FaIcon :icon="ICONS.detail" :fixed="false" />影片详情</button>
+          <button class="nf-btn ghost lg nf-on-media" @click="$emit('detail', v)"><FaIcon :icon="ICONS.detail" :fixed="false" />影片详情</button>
         </div>
       </div>
     </div>
@@ -194,7 +194,7 @@ onUnmounted(stopHero)
   max-width: 560px;
   font-size: 14.5px;
   line-height: 1.75;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--nf-text-primary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -216,7 +216,7 @@ onUnmounted(stopHero)
   gap: 16px;
   margin-bottom: 20px;
   font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--nf-text-primary);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
 }
 
@@ -228,11 +228,11 @@ onUnmounted(stopHero)
 
 .hero-chip {
   padding: 2px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 1px solid var(--nf-overlay-strong);
   border-radius: 14px;
   font-size: 12px;
   line-height: 18px;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--nf-text-primary);
   backdrop-filter: blur(2px);
 }
 
@@ -251,7 +251,7 @@ onUnmounted(stopHero)
   border: none;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.45);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--nf-text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -290,7 +290,7 @@ onUnmounted(stopHero)
   width: 22px;
   height: 3px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--nf-overlay-strong);
   cursor: pointer;
   transition: background 0.2s ease;
 }

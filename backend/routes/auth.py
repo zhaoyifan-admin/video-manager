@@ -7,6 +7,7 @@ from flask import Blueprint, g, request, send_file
 
 import config
 import db
+from admin_audit_logs import record
 from auth import (
     clear_login,
     current_user,
@@ -27,6 +28,9 @@ USERNAME_RE = re.compile(r"^[\w\u4e00-\u9fa5]{2,50}$")
 # 头像允许的文件类型与体积上限（本地私人服务，限制到 5MB 即可）
 ALLOWED_AVATAR_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 AVATAR_MAX_BYTES = 5 * 1024 * 1024
+ROLE_TEXT = {
+    "user": "普通用户", "reviewer": "审核员", "manager": "管理员", "admin": "超级管理员",
+}
 _AVATAR_MIME = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".gif": "image/gif", ".webp": "image/webp",
@@ -250,9 +254,14 @@ def change_role(user_id):
         return fail("角色无效（user / reviewer / manager / admin）")
     if user_id == g.user["id"] and role != "admin":
         return fail("不能降低自己的管理员权限")
-    result = db.execute("UPDATE users SET role = %s WHERE id = %s", (role, user_id))
-    if result["rowcount"] == 0:
+    before = db.query(
+        "SELECT username, role FROM users WHERE id = %s", (user_id,), one=True
+    )
+    if not before:
         return fail("用户不存在", 404)
+    db.execute("UPDATE users SET role = %s WHERE id = %s", (role, user_id))
+    record(g.user, "change_role", "user", user_id, before["username"],
+           f"{ROLE_TEXT.get(before['role'], before['role'])} → {ROLE_TEXT.get(role, role)}")
     return ok({"role": role})
 
 
@@ -277,4 +286,6 @@ def create_user():
         "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
         (username, hash_password(password), role),
     )
+    record(g.user, "create_user", "user", result["lastrowid"], username,
+           f"初始角色：{ROLE_TEXT.get(role, role)}")
     return ok({"id": result["lastrowid"], "username": username, "role": role})

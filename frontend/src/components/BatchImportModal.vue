@@ -125,7 +125,7 @@ https://example.com/watch?v=123 | 在线课程 | 前端 | 教程 | 共12集"
 
 .batch-hint code {
   background: #2a2a30;
-  color: #e5e5e5;
+  color: var(--nf-text-primary);
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 12px;

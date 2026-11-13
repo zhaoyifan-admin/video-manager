@@ -462,5 +462,146 @@ class CoreTest(unittest.TestCase):
             self.ok(self.call("delete", path, "admin"))
 
 
+    # ---------- 运营管理：合集审核模型 ----------
+    def test_19_collection_audit_flow(self):
+        db.execute("DELETE FROM collections WHERE name LIKE %s", (PREFIX + "合集%",))
+        name_a = PREFIX + "合集A"
+        created = self.ok(self.call("post", "/api/collections", "user",
+                                    json={"name": name_a, "description": "审核链路测试"}))
+        cid = created["id"]
+        self.assertEqual(created["auditStatus"], 0)
+        self.assertFalse(created["isPublished"])
+        self.assertTrue(created["isMine"])
+        # 待审合集：创建者本人可见，审核角色可见，普通用户列表里的其它账号拿不到状态字段
+        self.assertIn(cid, [c["id"] for c in self.ok(self.call("get", "/api/collections", "user"))["items"]])
+        self.assertIn(cid, [c["id"] for c in self.ok(self.call("get", "/api/collections", "reviewer"))["items"]])
+        # 普通用户无审核权
+        self.assertEqual(self.call("post", f"/api/collections/{cid}/review", "user",
+                                   json={"action": "approve"}, expect=403)["code"], 1)
+        # 审核员通过 → 已发布
+        approved = self.ok(self.call("post", f"/api/collections/{cid}/review", "reviewer",
+                                     json={"action": "approve"}))["collection"]
+        self.assertEqual(approved["auditStatus"], 1)
+        self.assertTrue(approved["isPublished"])
+        pub = [c for c in self.ok(self.call("get", "/api/collections", "user"))["items"] if c["id"] == cid]
+        self.assertTrue(pub and pub[0]["isPublished"])
+
+        # 驳回必填理由 + 创建者重新提交 + 审核轨迹
+        name_b = PREFIX + "合集B"
+        c2 = self.ok(self.call("post", "/api/collections", "user", json={"name": name_b}))["id"]
+        self.assertEqual(self.call("post", f"/api/collections/{c2}/review", "reviewer",
+                                   json={"action": "reject"}, expect=400)["code"], 1)
+        rejected = self.ok(self.call("post", f"/api/collections/{c2}/review", "reviewer",
+                                     json={"action": "reject", "reason": "名称不规范"}))["collection"]
+        self.assertEqual(rejected["auditStatus"], 2)
+        self.assertEqual(rejected["auditReason"], "名称不规范")
+        self.assertEqual(self.ok(self.call("post", f"/api/collections/{c2}/resubmit", "user"))["auditStatus"], 0)
+        logs = self.ok(self.call("get", f"/api/collections/{c2}/logs", "user"))
+        self.assertEqual([l["action"] for l in logs], ["submit", "reject", "resubmit"])
+        # 非创建者、非超管不能删除待审合集
+        self.assertEqual(self.call("delete", f"/api/collections/{c2}", "reviewer", expect=403)["code"], 1)
+
+        for x in (cid, c2):
+            self.ok(self.call("delete", f"/api/collections/{x}", "admin"))
+
+    # ---------- 运营管理：管理员操作审计 ----------
+    def test_20_admin_audit_logs(self):
+        uid = self.ids["user"]
+        self.ok(self.call("post", f"/api/auth/users/{uid}/role", "admin", json={"role": "reviewer"}))
+        self.ok(self.call("post", f"/api/auth/users/{uid}/role", "admin", json={"role": "user"}))
+        vid = self.make_video("admin", title=PREFIX + "auditvid")
+        self.ok(self.call("delete", f"/api/videos/{vid}", "admin"))
+
+        data = self.ok(self.call("get", "/api/admin-logs?pageSize=50", "admin"))
+        actions = [i["action"] for i in data["items"]]
+        self.assertIn("change_role", actions)
+        self.assertIn("delete_video", actions)
+        self.assertTrue(data["actionOptions"])
+        # 仅超管可查
+        for key in ("user", "reviewer", "manager"):
+            self.assertEqual(self.call("get", "/api/admin-logs", key, expect=403)["code"], 1)
+        # 关键词 / 动作筛选
+        kw = self.ok(self.call("get", "/api/admin-logs?keyword=" + PREFIX + "auditvid", "admin"))
+        self.assertTrue(any(i["action"] == "delete_video" for i in kw["items"]))
+        act = self.ok(self.call("get", "/api/admin-logs?action=change_role", "admin"))
+        self.assertTrue(all(i["action"] == "change_role" for i in act["items"]))
+
+        db.execute(
+            "DELETE FROM admin_audit_logs WHERE operator_name IN (%s,%s,%s,%s)",
+            tuple(PREFIX + k for k in ("admin", "manager", "user", "reviewer")),
+        )
+
+    # ---------- 运营管理：数据看板增强 ----------
+    def test_21_admin_overview_trends(self):
+        data = self.ok(self.call("get", "/api/admin/overview", "admin"))
+        self.assertEqual(len(data["viewTrend"]), 14)
+        self.assertTrue(all({"date", "fullDate", "views"} <= set(p) for p in data["viewTrend"]))
+        self.assertIsInstance(data["hotTags"], list)
+        self.assertTrue(all({"name", "videoCount", "totalViews"} <= set(t) for t in data["hotTags"]))
+        growth = data["storageGrowth"]
+        self.assertEqual(len(growth["points"]), 30)
+        self.assertEqual(growth["totalVideos"], data["videos"]["total"])
+        self.assertGreaterEqual(growth["totalBytes"], 0)
+        self.assertGreaterEqual(growth["unmeasured"], 0)
+
+
+    # ---------- 第四档：评分 / 想看清单 / 相关推荐 ----------
+    def test_22_engagement_rating_watchlist_recommendation(self):
+        admin_id = self.ids["admin"]
+
+        def add_video(title, public=True):
+            return db.execute(
+                "INSERT INTO videos (user_id, title, file_path, audit_status, is_public) "
+                "VALUES (%s, %s, %s, 1, %s)",
+                (admin_id, PREFIX + title, "uploads/__test_engagement.mp4", 1 if public else 0),
+            )["lastrowid"]
+
+        a, b, hidden = add_video("engage_a"), add_video("engage_b"), add_video("engage_hidden", False)
+        tag_id = db.execute(
+            "INSERT INTO tags (name, is_published, audit_status) VALUES (%s, 1, 1)",
+            (PREFIX + "engage_tag",),
+        )["lastrowid"]
+        for vid in (a, b):
+            db.execute("INSERT INTO video_tags (video_id, tag_id) VALUES (%s, %s)", (vid, tag_id))
+        try:
+            # 评分范围校验：越界与非整数都不接受
+            self.assertEqual(self.call("put", f"/api/videos/{a}/rating", "user", expect=400, json={"score": 6})["code"], 1)
+            self.assertEqual(self.call("put", f"/api/videos/{a}/rating", "user", expect=400, json={"score": "5"})["code"], 1)
+            d = self.ok(self.call("put", f"/api/videos/{a}/rating", "user", json={"score": 5}))
+            self.assertEqual((d["myScore"], d["avgScore"], d["ratingCount"]), (5, 5.0, 1))
+            # 多用户评分聚合；reviewer 可见全部影片，适合做第二位评价人
+            d = self.ok(self.call("put", f"/api/videos/{a}/rating", "reviewer", json={"score": 3}))
+            self.assertEqual((d["avgScore"], d["ratingCount"]), (4.0, 2))
+            d = self.ok(self.call("get", f"/api/videos/{a}/engagement", "user"))
+            self.assertEqual(d["myScore"], 5)
+            self.assertFalse(d["isWantToWatch"])
+            d = self.ok(self.call("put", f"/api/videos/{a}/rating", "user", json={"score": 0}))
+            self.assertEqual((d["myScore"], d["ratingCount"]), (0, 1))
+
+            # 想看清单：切换 + 按用户隔离 + 列表随带互动字段
+            self.assertTrue(self.ok(self.call("post", f"/api/videos/{a}/watchlist", "user"))["isWantToWatch"])
+            self.assertFalse(self.ok(self.call("post", f"/api/videos/{a}/watchlist", "user"))["isWantToWatch"])
+            self.assertTrue(self.ok(self.call("post", f"/api/videos/{a}/watchlist", "user"))["isWantToWatch"])
+            lst = self.ok(self.call("get", "/api/videos?wantlist=1", "user"))
+            self.assertIn(a, [x["id"] for x in lst["items"]])
+            self.assertTrue(all({"avgScore", "myScore", "isWantToWatch"} <= set(x) for x in lst["items"]))
+            other = self.ok(self.call("get", "/api/videos?wantlist=1", "reviewer"))
+            self.assertNotIn(a, [x["id"] for x in other["items"]])
+
+            # 推荐：排除自身与不可见影片，同标签影片优先，附带推荐理由
+            rec = self.ok(self.call("get", f"/api/videos/{a}/recommendations?limit=5", "user"))
+            ids = [x["id"] for x in rec["items"]]
+            self.assertNotIn(a, ids)
+            self.assertNotIn(hidden, ids)
+            self.assertIn(b, ids)
+            self.assertEqual(rec["items"][0]["id"], b)
+            self.assertTrue(all("recommendReason" in x for x in rec["items"]))
+            self.assertEqual(self.call("get", f"/api/videos/{hidden}/engagement", "user", expect=404)["code"], 1)
+        finally:
+            for vid in (a, b, hidden):
+                db.execute("DELETE FROM videos WHERE id = %s", (vid,))
+            db.execute("DELETE FROM tags WHERE id = %s", (tag_id,))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
