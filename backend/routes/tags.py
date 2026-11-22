@@ -6,7 +6,11 @@
 - 被驳回的标签，创建者或管理员可「重新提交」再次进入待审核；
 - 所有审核动作写入 tag_audit_logs（只追加、可追溯）。
 
-可见性：普通用户只看「已发布」的标签 + 自己提交的标签（含状态）；审核角色看全部。
+可见性分两类接口，均由后端按会话角色裁定，前端不参与判断：
+- GET /api/tags         管理视图（工作台 / 审核 / 视频表单）：审核角色看全部，
+                        普通用户看「已发布」+ 自己提交的标签（含状态，用于重新提交 / 删除）；
+- GET /api/tags/visible 展示视图（首页标签栏）：超管看全部并带状态角标，
+                        其他角色严格只拿到「已发布」标签。
 """
 from flask import Blueprint, g, request
 
@@ -71,6 +75,48 @@ def list_tags():
             (g.user["id"],),
         )
     return ok([_serialize(r, g.user["id"], admin_view) for r in rows])
+
+
+def _visible_badge(row):
+    """展示视图的状态角标文案：已发布为空，其余标注非公开状态"""
+    if row["audit_status"] == 0:
+        return "待审核"
+    if row["audit_status"] == 2:
+        return "已驳回"
+    return "" if row["is_published"] else "未发布"
+
+
+@bp.get("/visible")
+@require_login
+def visible_tags():
+    """标签栏可见集合（展示视图）：可见性完全由后端按会话角色裁定。
+
+    - 超管（role=admin）：全部标签，附 badge（未发布 / 待审核 / 已驳回）供预览；
+    - 其他角色：严格只返回 is_published=1 的标签，连自己提交的未发布标签也不返回。
+
+    与 /api/tags 分开是必要的：管理视图要给审核角色看待审标签、给普通用户看
+    自己提交的条目（重新提交 / 删除 / 审核留痕），不能用展示规则一并收紧。
+    仅返回展示所需的最小字段集，不携带驳回理由、创建者等管理信息。
+    """
+    if is_super_admin(g.user):
+        rows = db.query(
+            "SELECT id, name, is_published, audit_status FROM tags ORDER BY name ASC"
+        )
+    else:
+        rows = db.query(
+            "SELECT id, name, is_published, audit_status FROM tags "
+            "WHERE is_published = 1 ORDER BY name ASC"
+        )
+    return ok([
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "isPublished": bool(r["is_published"]),
+            "auditStatus": r["audit_status"],
+            "badge": _visible_badge(r),
+        }
+        for r in rows
+    ])
 
 
 @bp.post("")

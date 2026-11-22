@@ -305,6 +305,48 @@ class CoreTest(unittest.TestCase):
         if row:
             db.execute("DELETE FROM tags WHERE id = %s", (row["id"],))
 
+    # ---------- 标签栏展示视图：可见性由后端按角色裁定，前端不参与判断 ----------
+    def test_14c_tag_visible_scope(self):
+        stem = PREFIX + "可见性"
+        published, hidden, pending, rejected = (
+            stem + "已发布", stem + "未发布", stem + "待审", stem + "已驳回",
+        )
+        db.execute("DELETE FROM tags WHERE name LIKE %s", (stem + "%",))
+        p = self.ok(self.call("post", "/api/tags", "admin", json={"name": published, "isPublished": True}))
+        # 超管直接建「未发布」写的是待审核态；要得到「已通过但未发布」需先发布再取消发布
+        h = self.ok(self.call("post", "/api/tags", "admin", json={"name": hidden, "isPublished": True}))
+        self.ok(self.call("put", f"/api/tags/{h['id']}", "admin", json={"isPublished": False}))
+        pend = self.ok(self.call("post", "/api/tags", "user", json={"name": pending}))
+        rj = self.ok(self.call("post", "/api/tags", "user", json={"name": rejected}))
+        self.ok(self.call("post", f"/api/tags/{rj['id']}/review", "admin",
+                          json={"action": "reject", "reason": "测试驳回"}))
+        try:
+            # 超管：全部标签，四种状态角标齐全
+            admin_rows = {t["name"]: t for t in self.ok(self.call("get", "/api/tags/visible", "admin"))}
+            self.assertEqual(admin_rows[published]["badge"], "")
+            self.assertEqual(admin_rows[hidden]["badge"], "未发布")
+            self.assertFalse(admin_rows[hidden]["isPublished"])
+            self.assertEqual(admin_rows[pending]["badge"], "待审核")
+            self.assertEqual(admin_rows[rejected]["badge"], "已驳回")
+            # 展示视图只给最小字段，不携带驳回理由 / 创建者等管理信息
+            self.assertNotIn("auditReason", admin_rows[hidden])
+            self.assertNotIn("createdByName", admin_rows[hidden])
+            # 其他等级：严格只有已发布，连自己提交的待审 / 驳回标签也不返回
+            for key in ("manager", "reviewer", "user"):
+                rows = self.ok(self.call("get", "/api/tags/visible", key))
+                names = [t["name"] for t in rows]
+                self.assertIn(published, names)
+                for private in (hidden, pending, rejected):
+                    self.assertNotIn(private, names)
+                self.assertTrue(all(t["isPublished"] is True and t["badge"] == ""
+                                    for t in rows if t["name"].startswith(stem)))
+            # 管理视图不受影响：审核角色仍看待审，普通用户仍看自己提交项
+            self.assertIn(pending, [t["name"] for t in self.ok(self.call("get", "/api/tags", "reviewer"))])
+            self.assertIn(pending, [t["name"] for t in self.ok(self.call("get", "/api/tags", "user"))])
+        finally:
+            for tid in (p["id"], h["id"], pend["id"], rj["id"]):
+                self.ok(self.call("delete", f"/api/tags/{tid}", "admin"))
+
     # ---------- 角色层级：管理员平级及以下可见/可审 ----------
     def test_15_role_hierarchy_visibility(self):
         vid_user = self.make_video("user", "用户待审片")     # 普通用户上传（待审核）

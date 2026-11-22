@@ -63,7 +63,8 @@ const optionsFor = (key) => {
     case 'genre':
       return [
         { label: '全部', value: 0 },
-        ...props.tags.map((t) => ({ label: t.name, value: t.id })),
+        // badge 由后端 /api/tags/visible 下发（仅超管可见的非公开标签有值），前端只负责渲染
+        ...props.tags.map((t) => ({ label: t.name, value: t.id, badge: t.badge || '' })),
       ]
     case 'collection':
       return [
@@ -237,7 +238,11 @@ const activeSummary = computed(() =>
               :class="isOn(row, opt) ? ON_CHIP : IDLE_CHIP"
               @click="choose(row, opt)"
             >
-              {{ opt.label }}
+              {{ opt.label }}<span
+                v-if="opt.badge"
+                class="ml-1 rounded-[3px] px-1 text-[10px] font-semibold leading-[16px]"
+                :class="isOn(row, opt) ? 'bg-white/20 text-white' : 'bg-amber-500/20 text-amber-300'"
+              >{{ opt.badge }}</span>
             </button>
             <span
               v-if="row.key === 'genre' && row.options.length === 1"

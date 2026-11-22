@@ -65,6 +65,9 @@ export const uploadAvatar = (file) => {
 export const avatarUrl = (t = Date.now()) => `/api/auth/avatar?t=${t}`
 
 // ---------- 标签（普通用户可提交新标签，经管理员审核通过后发布） ----------
+// 标签栏 / 筛选专用：后端按会话角色返回可见集合（超管含未发布 + badge，其他角色仅已发布），前端不做角色判断
+export const listVisibleTags = () => http.get('/tags/visible')
+// 工作台 / 审核 / 视频表单用：审核角色全量，普通用户为已发布 + 自己提交的
 export const listTags = () => http.get('/tags')
 // 新建标签：管理员传 isPublished=true 直接发布（免审通过），普通用户留空进入待审核
 export const createTag = (name, isPublished = false) =>

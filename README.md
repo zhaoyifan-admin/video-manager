@@ -18,6 +18,8 @@
 
 ```
 video-manager/
+├── setup.py                # ★ 新电脑一键安装程序（幂等，可重复运行）
+├── install.bat             # Windows 双击入口
 ├── backend/                # Flask 后端（PyCharm 运行 app.py）
 │   ├── app.py              # 应用入口 / 前端托管 / 全局错误处理
 │   ├── config.py           # ★ 本机配置（含数据库密码，不入库）
@@ -48,23 +50,106 @@ video-manager/
         └── ui/             # Toast / 确认框 / NfModal
 ```
 
-## 首次部署
+## 新电脑一键安装（Windows，推荐）
+
+把项目放到任意目录（路径建议不含空格），在**项目根目录**执行一条命令即可，不用再手工建库、改配置、插账号、装依赖、构建前端。
+
+### 前置条件（系统级软件，只装一次）
+
+| 软件 | 版本 | 说明 |
+|---|---|---|
+| Python | 3.12+ | 安装时勾选 `Add python.exe to PATH`，并确保带 pip / venv |
+| Node.js | 18+ | 自带 npm |
+| MySQL | 8.0+ | 服务已启动，且知道 root 密码 |
+| ffmpeg / ffprobe | 可选 | 缺了也能跑，只是不抽封面、播放页不做编码探测 |
+
+安装程序不代装系统级运行时。空机器可用 winget 一次补齐（MySQL 还需在 Installer 里完成初始化并记住 root 密码）：
+
+```powershell
+winget install Python.Python.3.13 OpenJS.NodeJS.LTS Gyan.FFmpeg
+```
+
+### 一条命令
+
+```powershell
+# 方式一：双击 install.bat
+# 方式二：命令行（首次只问一次 MySQL root 密码）
+py setup.py
+```
+
+想连密码都不输入，直接用参数（完全免交互的推荐写法）：
+
+```powershell
+py setup.py --mysql-password 你的MySQL密码 --admin-password 你的强密码 --with-ffmpeg
+```
+
+### 自动完成的步骤（对应脚本里的 `[1/8]` ~ `[8/8]`）
+
+| # | 动作 | 重复运行时的行为 |
+|---|---|---|
+| 准备 | 创建 `backend/venv` 并安装 `requirements.txt`，然后切换到该解释器 | 已有则只做依赖校验 |
+| 1 | 检查 Python / Node / MySQL 端口 | 只读检查 |
+| 2 | 校验 MySQL 认证，由 `config.example.py` 生成 `backend/config.py`（填数据库密码 + 随机 64 位 SECRET_KEY） | **已存在则保留**，只补齐过弱的 SECRET_KEY；`MEDIA_ROOTS` 等自定义项不动 |
+| 3 | 执行 `schema.sql` 建库建表（优先 mysql 客户端，找不到就用 PyMySQL 逐句执行） | `CREATE TABLE IF NOT EXISTS` + 幂等补列，存量数据不动 |
+| 4 | 补建超管 `admin`（`schema.sql` 不含种子账号，这是最容易漏的一步） | 已存在则跳过，**不覆盖密码、不改动角色** |
+| 5 | `npm ci` / `npm install` + `npm run build` 产出 `frontend/dist` | 依赖齐全则跳过安装 |
+| 6 | 检查 ffmpeg，`--with-ffmpeg` 时用 winget 自动安装 | 已装则跳过 |
+| 7 | 创建 `backend/uploads`、`backend/thumbs` 运行目录 | 已存在则跳过 |
+| 8 | Flask `test_client` 冒烟验收：首页、SPA 回退、静态资源、接口、登录态 | **不启动也不重启任何服务**，不占用 5000 / 9000 端口 |
+
+任一步失败都不会留下半吊子状态：按报错修好（多半是 MySQL 密码或服务没起），重跑一次即可。
+
+### 装完之后
+
+```powershell
+cd backend
+venv\Scripts\python app.py     # 或 PyCharm 运行 backend/app.py
+```
+
+打开 `http://127.0.0.1:5000`。开发态另开终端 `cd frontend && npm run dev`，访问 `http://localhost:9000`（Vite 只监听 IPv6 localhost，写 `127.0.0.1:9000` 连不上）。**立即改密**：默认超管 `admin / admin123`；`config.py` 里 `REGISTRATION_ENABLED` 默认 `True`（开放注册），按需关闭。
+
+局域网长期运行：
+
+```powershell
+cd backend
+venv\Scripts\python -m waitress --host=0.0.0.0 --port=5000 app:app
+```
+
+### 参数与排错
+
+| 参数 | 说明 |
+|---|---|
+| `--mysql-host / --mysql-port / --mysql-user` | 非默认连接（默认 `127.0.0.1 / 3306 / root`） |
+| `--mysql-password` | 不填时依次读 `MYSQL_PWD` 环境变量、已有 `config.py`，最后才交互询问 |
+| `--admin-password` | 首次创建超管时用的密码，建议一并设强密码 |
+| `--with-ffmpeg` | 缺 ffmpeg 时用 winget 安装（需联网；装完重开终端并重启后端才生效） |
+| `--skip-frontend` / `--no-verify` | 排错时跳过前端步骤 / 跳过冒烟验收 |
+
+- **MySQL 连不上**：先确认服务已启动、`mysql -u root -p` 能进，再带 `--mysql-password` 重跑。
+- **已有 config.py 但换了数据库密码**：带 `--mysql-password 新密码` 重跑，只更新密码行，其他配置保留。
+- **npm 装不动**：删掉 `frontend/node_modules` 后重跑；国内可先 `npm config set registry https://registry.npmmirror.com`。
+- **前端有两套锁文件**：仓库里 `package-lock.json` 与 `pnpm-lock.yaml` 并存，安装程序以 **npm + package-lock.json** 为准，别混用两个包管理器。
+- **不要用 PyCharm 内置服务器（63343）直接打开 `dist/index.html`**，前端路由与 `/api` 都由 Flask 5000 托管。
+
+## 手动安装（分步，排错时用）
+
+推荐用上面的一键安装；以下步骤仅供手动排错，命令为 Windows 风格。
 
 ### 1. 数据库
 
-```bash
+```powershell
 # 全新安装 / 存量库升级：统一执行 schema.sql 即可
 # （CREATE TABLE IF NOT EXISTS 安全幂等：仅补齐缺失的表/列并写入表与列中文注释，已有结构不受影响）
-/usr/local/mysql/bin/mysql -u root -p < backend/schema.sql
+mysql -u root -p < backend\schema.sql
 ```
 
-超管初始账号 `admin / admin123`，**上线后请立即改密**。
+`schema.sql` **不含超管种子账号**（旧版 README 误写成「初始账号」）。纯手动安装可跑一次 `py setup.py --skip-frontend --no-verify` 只补数据库与账号。默认超管 `admin / admin123`，**上线后请立即改密**。
 
 ### 2. 配置
 
-```bash
-cp backend/config.example.py backend/config.py
-python3 -c "import secrets; print(secrets.token_hex(32))"   # 生成 SECRET_KEY
+```powershell
+copy backend\config.example.py backend\config.py
+py -3 -c "import secrets; print(secrets.token_hex(32))"   # 生成 SECRET_KEY
 ```
 
 在 `backend/config.py` 中填写：
@@ -84,24 +169,27 @@ python3 -c "import secrets; print(secrets.token_hex(32))"   # 生成 SECRET_KEY
 
 ### 3. 启动
 
-```bash
-pip3 install -r backend/requirements.txt    # 或用 backend/venv
-# PyCharm 运行 backend/app.py → http://127.0.0.1:5000
+```powershell
+py -3 -m venv backend\venv
+backend\venv\Scripts\python -m pip install -r backend\requirements.txt
+cd backend && venv\Scripts\python app.py    # http://127.0.0.1:5000（也可 PyCharm 运行 backend/app.py）
 
-cd frontend && npm install && npm run dev    # 开发态 http://localhost:5173
-cd frontend && npm run build                 # 生产态由 Flask 托管 frontend/dist
+cd frontend && npm install && npm run dev   # 开发态 http://localhost:9000
+cd frontend && npm run build                # 生产态由 Flask 托管 frontend/dist
 ```
 
 生产态直接访问 `http://127.0.0.1:5000`；前端路由（`/play/:id`、`/audit` 等）自动回退到 `index.html`。不要用 PyCharm 内置服务器（63343）直接打开 `dist/index.html`。
 
 **长期运行 / 局域网访问**：Flask 内置服务器只适合开发调试，`DEBUG` 已默认关闭。生产或多人访问请用 waitress（已列入 requirements.txt），并把 `HOST` 改为 `0.0.0.0`：
 
-```bash
+```powershell
 cd backend
-./venv/bin/python -m waitress --host=0.0.0.0 --port=5000 app:app
+venv\Scripts\python -m waitress --host=0.0.0.0 --port=5000 app:app
 ```
 
 此时本机路径浏览、播放与删除仍受媒体目录白名单约束；请同时确认 `SECRET_KEY` 已随机化、`REGISTRATION_ENABLED` 符合预期。
+
+**接口性能 / 数据库连接**：`backend/db.py` 在单个 HTTP 请求内复用同一条连接（挂在 `flask.g`，请求结束由 `teardown_appcontext` 归还），请求之间再用一个上限 8 条的轻量连接池，避免每条 SQL 都重新做 TCP 握手与 MySQL 认证 —— PyMySQL 的纯 Python 握手约 20ms，在 PyCharm 调试器下可放大到 100ms，一个视频列表请求原先要建 8 次连接。`get_conn()` 仍返回独立连接给显式事务（新增 / 编辑 / 批量导入），事务语义不变。若接口仍慢，优先用非调试模式或 waitress 启动；修改 `db.py` / `app.py` 后需**重启后端进程**才生效（`DEBUG=False` 不启用自动重载）。
 
 ## 审核流程
 
@@ -124,9 +212,9 @@ cd backend
 
 ## 测试
 
-```bash
+```powershell
 cd backend
-./venv/bin/python -m unittest discover -s tests -v
+venv\Scripts\python -m unittest discover -s tests -v
 ```
 
 覆盖：路径白名单（任意文件读写拦截）、审核绕过防护、播放计数去重、续播、驳回通知已读、审核员权限、看板权限、排序与合集、存储体检与重定位预览、批量导入路径校验。测试账号使用 `__test_` 前缀，结束后由外键级联清理。
@@ -146,12 +234,14 @@ cd backend
 | 通知 | `GET /api/notifications`、`/notifications/unread-count`、`POST /api/notifications/read` |
 | 存储 | `POST /api/videos/upload`、`GET /api/paths/drives`、`/paths/list`、`POST /api/paths/mkdir`、`GET /api/videos/integrity`、`POST /api/videos/relocate` |
 | 管理 | `GET/POST /api/collections`、`DELETE /api/collections/:id`、`GET /api/admin/overview` |
-| 标签 / 类型 | `GET/POST /api/tags`、`DELETE /api/tags/:id`、`GET/POST /api/types`、`DELETE /api/types/:id` |
+| 标签 / 类型 | `GET /api/tags/visible`（标签栏展示视图：**后端按会话角色**返回，超管含未发布项与 `badge`，其他角色仅已发布）、`GET/POST /api/tags`（工作台管理视图）、`DELETE /api/tags/:id`、`GET/POST /api/types`、`DELETE /api/types/:id` |
 
-## 迁移到其他电脑
+## 迁移到其他电脑（含历史数据）
 
-1. 两台电脑都装好 Python 3.10+、Node 18+、MySQL 8、ffmpeg/ffprobe（可选但推荐）
-2. 新电脑执行 `schema.sql`；旧电脑导出：`mysqldump -u root -p video_manager > video_manager.sql`，新电脑导入
-3. 拷贝 `backend/uploads/`、`backend/thumbs/`，以及外接硬盘上的视频目录
-4. 若绝对路径变了，用「站点管理 → 存储体检 → 批量路径重定位」批量替换前缀；若新目录不在默认白名单，登记到 `MEDIA_ROOTS`
-5. 修改 `config.py` 的密码与 `SECRET_KEY`，重复启动步骤
+新电脑先按「新电脑一键安装」跑一次（建好空库、超管、配置与前端产物），再搬数据：
+
+1. 旧机导出 `mysqldump -u root -p video_manager > video_manager.sql`；新机导入 `mysql -u root -p video_manager < video_manager.sql`。导入可在安装前或安装后做，安装程序幂等、不会清空已有数据
+2. 拷贝 `backend/uploads/`、`backend/thumbs/`，以及外接硬盘上的视频目录
+3. 绝对路径变了：用「站点管理 → 存储体检 → 批量路径重定位」整体替换前缀（只换路径，不触发重新审核）；新目录不在默认白名单时登记到 `MEDIA_ROOTS`
+4. 想保留所有人的登录态，把旧机 `config.py` 的 `SECRET_KEY` 抄到新机；核对数据库密码后重跑 `py setup.py` 做一次验收
+5. 视频编码探测与封面抽帧依赖 ffmpeg，新机缺了按一键安装章节补装

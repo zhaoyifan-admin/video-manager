@@ -22,6 +22,7 @@ from config import (
     BASE_DIR, CORS_ORIGINS, DEBUG, HOST, MAX_UPLOAD_BYTES, PORT,
     SECRET_KEY, SESSION_LIFETIME_DAYS,
 )
+import db
 from routes import register_blueprints
 
 # 前端托管目录（生产部署）：npm run build 后直接访问 http://HOST:PORT 即可
@@ -40,6 +41,8 @@ def create_app():
             "python3 -c \"import secrets; print(secrets.token_hex(32))\" 生成后写入 backend/config.py"
         )
     app.secret_key = SECRET_KEY
+    # 请求结束时把复用的数据库连接归还池中（见 db.py），避免连接泄漏
+    app.teardown_appcontext(db.close_request_conn)
     app.permanent_session_lifetime = timedelta(days=SESSION_LIFETIME_DAYS)
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # 缓解跨站携带会话 cookie

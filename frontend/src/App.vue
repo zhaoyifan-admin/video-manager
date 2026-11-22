@@ -1,7 +1,7 @@
 <script setup>
 import { ICONS } from './composables/icons'
 import FaIcon from './ui/FaIcon.vue'
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import SiteNav from './components/SiteNav.vue'
 import HeroCarousel from './components/HeroCarousel.vue'
@@ -18,7 +18,7 @@ import { useVideos } from './composables/useVideos'
 import { useAuth } from './composables/useAuth'
 import { getPreset, DENSITY_CLASS } from './composables/channelPresets'
 import {
-  listTags,
+  listVisibleTags,
   listTypes,
   listVideos,
   getFeaturedVideos,
@@ -59,13 +59,22 @@ const handleLogout = async () => {
 }
 
 // ================= 标签 / 类型（导航与筛选用） =================
+// 标签栏可见集合由后端 /api/tags/visible 按会话角色裁定：超管含未发布项（带 badge），
+// 其他角色严格只返回已发布标签。前端只渲染返回结果，不做角色判断，
+// 避免判断被绕过、或让非公开标签数据到达客户端。
 const tags = ref([])
 const types = ref([])
 
 const loadTags = async () => {
-  // 普通用户接口已只返回已发布标签；管理员会拿到 isPublished 字段，筛选项里过滤掉未发布的
-  tags.value = (await listTags()).filter((t) => t.isPublished !== false)
+  tags.value = await listVisibleTags()
 }
+
+// 复位机制：账号在同一会话内切换时按新登录态重拉（后端按新角色重新裁定），
+// 不残留上一账号可见的标签；工作台发布 / 下架由 onManageChanged 重拉，
+// 重新进入本页由 onMounted 重拉。
+watch(() => user.value?.id, (id, prev) => {
+  if (id && prev && id !== prev) loadTags().catch((e) => showToast.error(e.message))
+})
 
 const loadTypes = async () => {
   // 待审核 / 未发布的类型不进频道导航（接口现已对普通用户返回 isPublished）
@@ -518,7 +527,11 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
           :class="{ on: query.tagId === t.id }"
           @click="query.tagId = t.id; onSearch()"
         >
-          {{ t.name }}
+          {{ t.name }}<span
+            v-if="t.badge"
+            class="ml-1 rounded-[3px] px-1 text-[10px] font-semibold leading-[16px]"
+            :class="query.tagId === t.id ? 'bg-white/20 text-white' : 'bg-amber-500/20 text-amber-300'"
+          >{{ t.badge }}</span>
         </button>
       </div>
     </div>

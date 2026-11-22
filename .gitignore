@@ -22,6 +22,9 @@ frontend/dist/
 .vscode/
 .DS_Store
 
+# ---------- WorkBuddy 工作区数据（本地记忆，不入库） ----------
+.workbuddy/
+
 # ---------- 日志 ----------
 *.log
 

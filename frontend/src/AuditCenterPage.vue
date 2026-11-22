@@ -16,10 +16,10 @@ const goBack = () => router.push({ name: 'list' })
 // ================= 状态页签 =================
 const activeTab = ref(0) // 0 待审核 / 1 已通过 / 2 已驳回 / -1 全部 / 'logs' 审核记录流水
 const TABS = [
+  { value: -1, label: '全部' },
   { value: 0, label: '待审核' },
   { value: 1, label: '已通过' },
   { value: 2, label: '已驳回' },
-  { value: -1, label: '全部' },
   { value: 'logs', label: '审核记录' },
 ]
 
