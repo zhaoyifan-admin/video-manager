@@ -210,6 +210,23 @@ venv\Scripts\python -m waitress --host=0.0.0.0 --port=5000 app:app
 - 删除视频会同时清理数据库记录、白名单内的源文件与缩略图缓存，**不可恢复**
 - 编码兼容：本地片源直接由浏览器播放，MKV / HEVC 等浏览器不支持的编码会在播放页给出明确原因与转码建议（需本机安装 ffprobe）
 
+## 明暗主题
+
+主题由 `frontend/src/composables/useTheme.js` 控制，只切换 `<html data-theme>`（`dark` / `light`），偏好存 `localStorage: nf-theme`，**不自动跟随系统**。色板与全部浅色适配规则集中在 `frontend/src/theme.css`：
+
+| 层 | 位置 | 作用 |
+|---|---|---|
+| `@theme` token | 文件开头 | `--color-nf-*`，供 `bg-nf-*` / `text-nf-*` 等 Tailwind 工具类引用 |
+| `:root` + `html[data-theme='light']` | 变量层 | 背景 / 文字 / 边框 / 输入控件 / 状态语义色，两套主题各一套值 |
+| `@layer components` | 手写组件类 | `.nf-btn` / `.nf-input` / `.chip-opt` 等，统一走变量 |
+| **浅色适配补丁层** | 文件末尾 | 覆盖历史组件里写死的 `#fff` 文字、`#161619` 深底、`#333338` 边框，以及 `bg-white/x`、`border-white/x`、`bg-black/20` 等 Tailwind 半透明叠层 |
+
+新增组件时请直接引用 `--nf-*` 变量（次级底 `--nf-bg-subtle`、分隔线 `--nf-divider`、hover 底 `--nf-bg-hover`、状态色 `--nf-danger-text` 等），**不要写死黑白值**；确需兼容旧组件时在补丁层按选择器补规则，不要散落到各 `.vue`。
+
+**媒体区刻意保持深色**：Hero 大图、详情页头图、频道头图渐变、视频封面叠层 / 信息条 / 详情浮层、播放器黑底、封面占位渐变、模态遮罩。这些区域的文字用 `--nf-on-media-text`（两套主题恒为浅色），不能跟随 `--nf-text-primary` 变深，否则白底主题下会出现深字压深底。
+
+修改 `theme.css` 后需重新构建：`cd frontend; npm run build`（生产态由 Flask 托管 `frontend/dist`；Vite dev 会自动热更新）。
+
 ## 测试
 
 ```powershell
