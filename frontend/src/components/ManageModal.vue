@@ -304,7 +304,7 @@ const subInfo = (row) => {
     </div>
 
     <!-- ============ 底部流程说明 ============ -->
-    <div class="mt-3.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-solid border-white/[0.08] pt-3 text-[11px] text-nf-muted">
+    <div class="mt-3.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-solid border-white/[0.08] px-3 py-3 text-[11px] text-nf-muted">
       <span class="rounded bg-amber-500/15 px-1.5 py-[2px] font-semibold text-amber-300">提交</span>
       <span>→</span>
       <span class="rounded bg-nf-red/15 px-1.5 py-[2px] font-semibold text-[#ff8a90]">审核</span>
