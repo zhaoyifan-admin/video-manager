@@ -96,7 +96,7 @@ const statuses = [
 ]
 
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true, menuWidth: 230, index: true,
+  card: true, border: false, stripe: true, menuWidth: 230, index: true,
   addBtn: false, editBtn: false,
   delBtn: can('system:notice:delete'),
   column: [

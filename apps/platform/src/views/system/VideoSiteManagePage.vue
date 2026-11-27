@@ -245,7 +245,7 @@ const logData = ref<AdminLogItem[]>([])
 const logSearch = reactive<Record<string, unknown>>({})
 const logPage = reactive({ currentPage: 1, pageSize: 15, total: 0 })
 const logOption = reactive<Record<string, unknown>>({
-  border: true, stripe: true, addBtn: false, editBtn: false, delBtn: false, menu: false,
+  border: false, stripe: true, addBtn: false, editBtn: false, delBtn: false, menu: false,
   column: [
     { label: '时间', prop: 'createdAt', width: 160 },
     { label: '动作', prop: 'actionText', width: 130 },

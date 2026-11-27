@@ -94,7 +94,7 @@ const roleName = (code: string): string =>
 
 const option = reactive<Record<string, unknown>>({
   card: true,
-  border: true,
+  border: false,
   stripe: true,
   index: true,
   selection: false,

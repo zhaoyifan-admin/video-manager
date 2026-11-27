@@ -22,7 +22,7 @@ const data = ref<PostItem[]>([])
 const search = reactive<Record<string, unknown>>({})
 const page = reactive({ currentPage: 1, pageSize: 10, total: 0 })
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true, menuWidth: 150, index: true,
+  card: true, border: false, stripe: true, menuWidth: 150, index: true,
   column: [
     { label: '岗位编码', prop: 'code', search: true, width: 140 },
     { label: '岗位名称', prop: 'name', search: true, span: 12 },

@@ -18,7 +18,7 @@ import { createDepartment, deleteDepartment, listDepartments, updateDepartment, 
 
 const data = ref<DeptItem[]>([])
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true, menuWidth: 150, index: true,
+  card: true, border: false, stripe: true, menuWidth: 150, index: true,
   column: [
     { label: '部门编码', prop: 'code', search: true, width: 140 },
     { label: '部门名称', prop: 'name', search: true, span: 12 },

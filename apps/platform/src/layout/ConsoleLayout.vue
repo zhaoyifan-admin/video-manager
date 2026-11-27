@@ -357,7 +357,6 @@ onMounted(() => {
   height: var(--nf-header-height);
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--nf-border);
   flex: 0 0 auto;
 }
 .aside-logo--compact { justify-content: center; }
@@ -369,29 +368,27 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   border: none;
-  border-top: 1px solid var(--nf-border);
   background: transparent;
   color: var(--nf-text-muted);
   cursor: pointer;
 }
 .aside-collapse:hover { color: var(--el-color-primary); }
-.console-aside--secondary { border-right: 1px solid var(--nf-border); }
+.console-aside--secondary { border-right: none; }
 .sub-menu-title {
   height: var(--nf-header-height);
   display: flex;
   align-items: center;
   padding: 0 16px;
-  border-bottom: 1px solid var(--nf-border);
   font-size: var(--nf-font-base);
   font-weight: 600;
   color: var(--nf-text-primary);
 }
 .console-header--horizontal { gap: 12px; }
-.horizontal-logo { flex: 0 0 auto; height: 100%; display: flex; align-items: center; border-right: 1px solid var(--nf-border); margin-left: -20px; padding-left: 20px; }
+.horizontal-logo { flex: 0 0 auto; height: 100%; display: flex; align-items: center; margin-left: -20px; padding-left: 20px; }
 .horizontal-menu { flex: 1; min-width: 0; height: 100%; border-bottom: none; }
-.console-subheader { height: var(--nf-subheader-height); padding: 0 16px; border-bottom: 1px solid var(--nf-border); background: var(--nf-bg-card); }
-.console-footer { height: 36px; display: flex; align-items: center; justify-content: center; border-top: 1px solid var(--nf-border); color: var(--nf-text-muted); font-size: var(--nf-font-xs); }
-.console-noheader-tools { height: 44px; padding: 0 16px; border-bottom: 1px solid var(--nf-border); background: var(--nf-bg-elevated); }
+.console-subheader { height: var(--nf-subheader-height); padding: 0 16px; background: var(--nf-bg-card); }
+.console-footer { height: 36px; display: flex; align-items: center; justify-content: center; color: var(--nf-text-muted); font-size: var(--nf-font-xs); }
+.console-noheader-tools { height: 44px; padding: 0 16px; background: var(--nf-bg-elevated); }
 .route-progress {
   position: fixed;
   top: 0;

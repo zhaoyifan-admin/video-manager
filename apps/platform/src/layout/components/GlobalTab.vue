@@ -164,7 +164,6 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', hideContext))
   gap: 4px;
   height: 38px;
   padding: 0 10px;
-  border-bottom: 1px solid var(--nf-border);
   background: var(--nf-bg-card);
 }
 .tab-list {
@@ -251,7 +250,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', hideContext))
   z-index: 0;
   width: 1px;
   height: 16px;
-  background: var(--nf-border);
+  background: var(--nf-line-soft);
   transform: translateY(-50%);
   transition: opacity 0.15s ease;
 }

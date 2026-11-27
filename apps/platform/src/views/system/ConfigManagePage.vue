@@ -43,7 +43,7 @@ const valueTypes = [
 ]
 
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true, menuWidth: 150, index: true, height: 'auto',
+  card: true, border: false, stripe: true, menuWidth: 150, index: true, height: 'auto',
   addBtn: can('system:config:create'),
   editBtn: can('system:config:update'),
   delBtn: can('system:config:delete'),

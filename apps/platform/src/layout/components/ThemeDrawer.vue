@@ -448,7 +448,6 @@ const copyPreferences = async (): Promise<void> => {
   width: 92px;
   flex: 0 0 92px;
   padding: 8px 6px;
-  border-right: 1px solid var(--nf-border);
   background: var(--nf-bg-subtle);
 }
 .pref-nav-item {
@@ -468,8 +467,7 @@ const copyPreferences = async (): Promise<void> => {
 .pref-nav-item:hover { background: var(--nf-overlay); color: var(--nf-text-primary); }
 .pref-nav-item.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
 .pref-content { flex: 1; min-width: 0; padding: 4px 18px 18px; overflow-y: auto; }
-.pref-section { padding: 12px 0; border-bottom: 1px solid var(--nf-border); }
-.pref-section:last-child { border-bottom: none; }
+.pref-section { padding: 12px 0; }
 .pref-section h4 {
   display: flex;
   align-items: center;
@@ -575,5 +573,5 @@ const copyPreferences = async (): Promise<void> => {
 
 <style>
 .pref-drawer .el-drawer__body { padding: 12px 20px; min-height: 0; overflow: hidden; }
-.pref-drawer .el-drawer__footer { border-top: 1px solid var(--nf-border); padding: 12px 20px; }
+.pref-drawer .el-drawer__footer { padding: 12px 20px; }
 </style>

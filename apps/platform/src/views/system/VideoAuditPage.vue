@@ -72,7 +72,7 @@ const statusTag = (s: number): 'warning' | 'success' | 'danger' =>
   s === 0 ? 'warning' : s === 1 ? 'success' : 'danger'
 
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true, menuWidth: 260, index: true,
+  card: true, border: false, stripe: true, menuWidth: 260, index: true,
   addBtn: false, editBtn: false, delBtn: false,
   column: [
     { label: '影片', prop: 'title', search: true, minWidth: 180 },

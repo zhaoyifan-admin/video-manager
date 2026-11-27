@@ -54,7 +54,7 @@ const search = reactive<Record<string, unknown>>({})
 const page = reactive({ currentPage: 1, pageSize: 10, total: 0 })
 const refreshing = ref(false)
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true, index: true,
+  card: true, border: false, stripe: true, index: true,
   addBtn: can('system:dict:create'),
   editBtn: can('system:dict:update'),
   delBtn: can('system:dict:delete'),
@@ -124,7 +124,7 @@ const items = ref<DictItem[]>([])
 const itemSearch = reactive<Record<string, unknown>>({})
 const itemPage = reactive({ currentPage: 1, pageSize: 10, total: 0 })
 const itemOption = reactive<Record<string, unknown>>({
-  border: true, stripe: true, menuWidth: 130, index: true,
+  border: false, stripe: true, menuWidth: 130, index: true,
   addBtn: can('system:dict:item'),
   editBtn: can('system:dict:item'),
   delBtn: can('system:dict:item'),

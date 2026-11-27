@@ -126,7 +126,7 @@ const permission = {
 }
 
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true,
+  card: true, border: false, stripe: true,
   selection: true, selectionWidth: 46, selectionFixed: 'left',
   rowKey: 'id', tree: true, treeProps: { children: 'children' }, defaultExpandAll: false,
   page: false, menuType: 'button', menuWidth: 300, menuAlign: 'right',

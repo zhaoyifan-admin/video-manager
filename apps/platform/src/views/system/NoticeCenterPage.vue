@@ -40,7 +40,7 @@ const search = reactive<Record<string, unknown>>({})
 const page = reactive({ currentPage: 1, pageSize: 10, total: 0 })
 
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true, menuWidth: 80, index: true,
+  card: true, border: false, stripe: true, menuWidth: 80, index: true,
   addBtn: false, editBtn: false, delBtn: false,
   column: [
     { label: '标题', prop: 'title', search: true, width: 240 },

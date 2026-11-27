@@ -8,6 +8,10 @@
   --el-border-radius-base: 8px;
   --el-font-size-base: var(--nf-font-base);
   --nf-tab-active-bg: var(--el-color-primary-light-9);
+  /* 表格线条收敛：只保留极弱的横向分隔，取消纵向网格 */
+  --el-table-border-color: var(--nf-line-soft);
+  --el-table-border-color-dark: var(--nf-line-soft);
+  --el-table-striped-bg-color: var(--nf-bg-subtle);
 }
 
 html[data-theme='dark'] {
@@ -48,13 +52,11 @@ html[data-theme='light'] {
 
 .console-aside {
   background: var(--nf-bg-card);
-  border-right: 1px solid var(--nf-border);
 }
 
 .console-header {
   height: var(--nf-header-height);
   background: var(--nf-bg-elevated);
-  border-bottom: 1px solid var(--nf-border);
 }
 
 .console-main {
@@ -68,6 +70,39 @@ html[data-theme='light'] {
   width: 100%;
   height: 100%;
   padding: 4px;
+}
+
+/* ===== 减少页面内不必要的线条：用背景与间距建立层级，而不是边框 ===== */
+.console-shell .console-aside,
+.console-shell .console-header,
+.console-shell .console-subheader,
+.console-shell .global-tab,
+.console-shell .console-footer,
+.console-shell .console-noheader-tools {
+  border-color: transparent !important;
+}
+
+/* tvue 面板：保留卡片底色与圆角，去掉描边和投影 */
+.console-shell .el-card,
+.console-shell .tvue-crud__search,
+.console-shell .tvue-crud__body {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* 表格：去掉外框与纵向网格，横向分隔线走 --nf-line-soft */
+.console-shell .el-table--border::after,
+.console-shell .el-table--border::before,
+.console-shell .el-table__inner-wrapper::before {
+  display: none;
+}
+.console-shell .el-table--border .el-table__cell {
+  border-right: none !important;
+}
+
+/* 搜索区折叠标题的分隔线 */
+.console-shell .el-collapse-item__header {
+  border-bottom: none;
 }
 
 .console-shell .el-menu {

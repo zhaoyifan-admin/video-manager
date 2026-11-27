@@ -72,6 +72,7 @@
   --nf-bg-sunken: #141418;      /* 再深一层：排序条、进度槽、计数胶囊 */
   --nf-bg-hover: #232328;       /* hover 底色 */
   --nf-divider: #24242a;        /* 表格行 / 列表分隔线 */
+  --nf-line-soft: rgba(255, 255, 255, 0.055); /* 弱化分隔线：卡片 / 表格 / 抽屉 */
   --nf-border-strong: #5c5c63;  /* hover 描边 */
   --nf-shadow: rgba(0, 0, 0, 0.55);
 
@@ -133,6 +134,7 @@ html[data-theme='light'] {
   --nf-bg-sunken: #eaeaf0;
   --nf-bg-hover: #e8e8ef;
   --nf-divider: #e6e6ed;
+  --nf-line-soft: rgba(20, 20, 30, 0.06);
   --nf-border-strong: #a5a5b2;
   --nf-shadow: rgba(24, 24, 45, 0.16);
   --nf-danger-text: #c0262d;

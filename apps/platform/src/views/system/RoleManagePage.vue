@@ -70,7 +70,7 @@ const scopeOptions = [
 ]
 
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true, index: true,
+  card: true, border: false, stripe: true, index: true,
   column: [
     { label: '角色编码', prop: 'roleCode', search: true, edit: false, width: 130 },
     { label: '角色名称', prop: 'roleName', search: true, span: 12 },

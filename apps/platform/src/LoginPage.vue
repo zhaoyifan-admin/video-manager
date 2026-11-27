@@ -5,7 +5,7 @@
       style="background: var(--nf-bg-card); border-color: var(--nf-border)"
     >
       <div class="mb-8">
-        <div class="mb-4 h-1 w-10 rounded-sm" style="background: var(--nf-red)"></div>
+        <PlatformLogo :size="40" class="mb-4" />
         <h1 class="text-xl font-medium" style="color: var(--nf-text-primary)">中型管理系统</h1>
         <p class="mt-2 text-xs" style="color: var(--nf-text-muted)">
           统一登录入口 · 子系统按权限访问
@@ -49,6 +49,7 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { login } from './api'
 import { useAuthStore } from './stores/auth'
+import PlatformLogo from './components/PlatformLogo.vue'
 
 const route = useRoute()
 const router = useRouter()

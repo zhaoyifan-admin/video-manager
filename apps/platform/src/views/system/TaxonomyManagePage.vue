@@ -96,7 +96,7 @@ const statusTag = (s: number): 'warning' | 'success' | 'danger' =>
   s === 0 ? 'warning' : s === 1 ? 'success' : 'danger'
 
 const option = reactive<Record<string, unknown>>({
-  card: true, border: true, stripe: true, menuWidth: 300,
+  card: true, border: false, stripe: true, menuWidth: 300,
   addBtn: true, editBtn: false, delBtn: false,
   column: [
     { label: '名称', prop: 'name', minWidth: 160, search: true },
