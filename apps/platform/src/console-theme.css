@@ -1,0 +1,125 @@
+/* 管理端 Element Plus 主题映射：复用视频系统既有的 nf-* 色板，
+   避免引入第二套配色；视频页面不加载本文件以外的额外视觉规则。 */
+:root {
+  --el-color-primary: #e50914;
+  --el-color-primary-light-3: #f34049;
+  --el-color-primary-light-5: #f6757c;
+  --el-color-primary-dark-2: #ba0711;
+  --el-border-radius-base: 8px;
+  --el-font-size-base: var(--nf-font-base);
+  --nf-tab-active-bg: var(--el-color-primary-light-9);
+}
+
+html[data-theme='dark'] {
+  --el-bg-color: #181818;
+  --el-bg-color-page: #0b0b0d;
+  --el-bg-color-overlay: #1f1f23;
+  --el-text-color-primary: #f5f5f5;
+  --el-text-color-regular: #b3b3b3;
+  --el-text-color-secondary: #757575;
+  --el-border-color: #26262b;
+  --el-border-color-light: #26262b;
+  --el-border-color-lighter: #26262b;
+  --el-fill-color-blank: #181818;
+  --el-fill-color-light: #1f1f23;
+  --el-fill-color: #1f1f23;
+  --nf-tab-active-bg: var(--nf-bg-elevated);
+}
+
+html[data-theme='light'] {
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #f4f4f6;
+  --el-bg-color-overlay: #ffffff;
+  --el-text-color-primary: #17171c;
+  --el-text-color-regular: #4f4f5a;
+  --el-text-color-secondary: #767682;
+  --el-border-color: #d9d9e0;
+  --el-border-color-light: #e5e5ea;
+  --el-border-color-lighter: #eeeef2;
+  --el-fill-color-blank: #ffffff;
+  --el-fill-color-light: #f4f4f6;
+  --el-fill-color: #f4f4f6;
+}
+
+.console-shell {
+  background: var(--nf-bg-page);
+  color: var(--nf-text-primary);
+}
+
+.console-aside {
+  background: var(--nf-bg-card);
+  border-right: 1px solid var(--nf-border);
+}
+
+.console-header {
+  height: var(--nf-header-height);
+  background: var(--nf-bg-elevated);
+  border-bottom: 1px solid var(--nf-border);
+}
+
+.console-main {
+  background: var(--nf-bg-page);
+  padding: 5px;
+  overflow: auto;
+}
+
+/* 管理端业务页统一容器：替换原 Tailwind p-1，尺寸撑满 console-main 内容区 */
+.console-page {
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+}
+
+.console-shell .el-menu {
+  border-right: none;
+  background: transparent;
+}
+
+/* SoybeanAdmin 风格布局：菜单容器 */
+.app-menu { border-right: none; background: transparent; }
+.app-menu--vertical { height: 100%; }
+.app-menu--horizontal { height: 100%; }
+.app-menu--horizontal .el-menu-item,
+.app-menu--horizontal .el-sub-menu__title { height: var(--nf-header-height); line-height: var(--nf-header-height); }
+.app-menu--primary.app-menu--vertical .el-menu-item { padding: 0 !important; justify-content: center; }
+.console-aside--secondary .el-menu-item { height: 42px; line-height: 42px; }
+.console-header--horizontal { padding: 0 20px; }
+.console-header--horizontal .el-menu--horizontal > .el-menu-item,
+.console-header--horizontal .el-menu--horizontal > .el-sub-menu .el-sub-menu__title {
+  border-bottom: none;
+}
+
+/* ===== Vben 风格偏好设置：页面切换动画 ===== */
+.fade-enter-active,
+.fade-leave-active,
+.fade-slide-enter-active,
+.fade-slide-leave-active,
+.slide-left-enter-active,
+.slide-left-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+.fade-slide-enter-from { opacity: 0; transform: translateY(10px); }
+.fade-slide-leave-to { opacity: 0; transform: translateY(-6px); }
+.slide-left-enter-from { opacity: 0; transform: translateX(24px); }
+.slide-left-leave-to { opacity: 0; transform: translateX(-24px); }
+
+/* ===== 标签页风格（浏览器样式在 GlobalTab.vue 内实现） ===== */
+.console-shell .global-tab--card .tab-item { border-radius: 6px; }
+.console-shell .global-tab--plain .tab-item {
+  border-color: transparent;
+  background: transparent;
+}
+.console-shell .global-tab--plain .tab-item.active {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+}
+
+/* ===== 紧凑模式 ===== */
+html.compact {
+  --nf-header-height: 44px;
+  --nf-subheader-height: 30px;
+}
+html.compact .console-main { padding: 0; }
+html.compact .console-page { padding: 0; }
+html.compact .global-tab { height: 32px; flex-basis: 32px; }

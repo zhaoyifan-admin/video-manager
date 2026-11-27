@@ -7,7 +7,10 @@
     py setup.py --mysql-password 你的MySQL密码 --admin-password 你的强密码 --with-ffmpeg
 
 一次运行自动完成：环境检查 -> Python 虚拟环境与后端依赖 -> backend/config.py
--> 建库建表(schema.sql) -> 超管账号 -> 前端依赖与构建 -> ffmpeg(可选) -> 冒烟验收。
+-> 建库建表(schema.sql) -> 超管账号 -> 平台与视频两套前端构建 -> ffmpeg(可选) -> 冒烟验收。
+
+目录约定：backend/ 为主系统后端（含 core/ 与各子系统目录），apps/ 为 pnpm monorepo
+前端应用目录；视频子系统分别位于 backend/video/ 与 apps/video/。
 
 设计原则：
 - 幂等：可反复运行，不覆盖 config.py 中已有的自定义配置，不清空已有数据，
@@ -34,15 +37,19 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-BACKEND = ROOT / "backend"
-FRONTEND = ROOT / "frontend"
+MAIN_BACKEND = ROOT / "backend"
+BACKEND = MAIN_BACKEND / "video"
+VIDEO_FRONTEND = ROOT / "apps" / "video"
+PLATFORM_FRONTEND = ROOT / "apps" / "platform"
+MAIN_ENTRY = MAIN_BACKEND / "app.py"
 VENV_DIR = BACKEND / "venv"
 VENV_PY = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-CONFIG_FILE = BACKEND / "config.py"
-CONFIG_EXAMPLE = BACKEND / "config.example.py"
-REQUIREMENTS = BACKEND / "requirements.txt"
+CONFIG_FILE = MAIN_BACKEND / "config.py"
+CONFIG_EXAMPLE = MAIN_BACKEND / "config.example.py"
+REQUIREMENTS = MAIN_BACKEND / "requirements.txt"
 SCHEMA = BACKEND / "schema.sql"
-DIST = FRONTEND / "dist"
+DIST = VIDEO_FRONTEND / "dist"
+PLATFORM_DIST = PLATFORM_FRONTEND / "dist"
 DB_NAME = "video_manager"
 TOTAL = 8
 
@@ -385,26 +392,23 @@ def ensure_frontend(args):
     if args.skip_frontend:
         warn("已指定 --skip-frontend，跳过前端依赖与构建")
         return
-    npm = shutil.which("npm") or shutil.which("npm.cmd")
-    if not npm:
-        die("未找到 npm，请先安装 Node 18+")
-    node_modules = FRONTEND / "node_modules"
-    if (node_modules / "vue").is_dir() and (node_modules / ".bin").is_dir():
+    pnpm = shutil.which("pnpm") or shutil.which("pnpm.cmd")
+    if not pnpm:
+        die("未找到 pnpm，请先执行 npm install -g pnpm@10.11.0 或 corepack enable")
+    # pnpm workspace 在仓库根目录安装一次、turbo 在根目录统一编排构建。
+    node_modules = ROOT / "node_modules"
+    if node_modules.is_dir() and (node_modules / ".pnpm").is_dir():
         ok("前端依赖已就绪，跳过安装")
     else:
-        lock = FRONTEND / "package-lock.json"
-        if lock.exists():
-            run([npm, "ci"], cwd=str(FRONTEND))
-            ok("npm ci 完成（依据 package-lock.json）")
-        else:
-            run([npm, "install"], cwd=str(FRONTEND))
-            ok("npm install 完成")
-    run([npm, "run", "build"], cwd=str(FRONTEND))
-    index = DIST / "index.html"
-    assets = list((DIST / "assets").glob("*.js")) if (DIST / "assets").is_dir() else []
-    if not index.is_file() or not assets:
-        die("构建产物不完整：缺少 frontend/dist/index.html 或 assets/*.js")
-    ok("frontend/dist 构建完成（1 个 index.html + %d 个 JS 资源）" % len(assets))
+        run([pnpm, "install"], cwd=str(ROOT))
+        ok("前端 pnpm install 完成")
+    run([pnpm, "build"], cwd=str(ROOT))
+    for dist, label in ((PLATFORM_DIST, "中型管理平台"), (DIST, "视频子系统")):
+        index = dist / "index.html"
+        assets = list((dist / "assets").glob("*.js")) if (dist / "assets").is_dir() else []
+        if not index.is_file() or not assets:
+            die("%s 前端构建产物不完整：缺少 index.html 或 assets/*.js" % label)
+        ok("%s 前端构建完成（1 个 index.html + %d 个 JS 资源）" % (label, len(assets)))
 
 
 # ------------------------------------------------------------ 6. ffmpeg
@@ -434,17 +438,15 @@ def ensure_ffmpeg(args):
 # ------------------------------------------------------------ 7. 验收
 
 def verify(args, admin_password):
-    sys.path.insert(0, str(BACKEND))
-    previous = os.getcwd()
-    os.chdir(str(BACKEND))
+    sys.path.insert(0, str(ROOT))
+    spec = importlib.util.spec_from_file_location("management_root_entry", MAIN_ENTRY)
+    root_entry = importlib.util.module_from_spec(spec)
     try:
-        import app as flask_entry
+        spec.loader.exec_module(root_entry)
     except Exception as exc:
-        die("后端导入失败：%s" % exc)
-    finally:
-        os.chdir(previous)
-
-    client = flask_entry.app.test_client()
+        die("根入口导入失败：%s" % exc)
+    from werkzeug.test import Client
+    client = Client(root_entry.application)
     failures = []
 
     def check(name, condition):
@@ -460,11 +462,14 @@ def verify(args, admin_password):
     response = client.get("/login")
     check("前端路由 /login 回退到 index.html",
           response.status_code == 200 and b'id="app"' in response.data)
-    js_files = list((DIST / "assets").glob("*.js")) if (DIST / "assets").is_dir() else []
+    js_files = list((PLATFORM_DIST / "assets").glob("*.js")) if (PLATFORM_DIST / "assets").is_dir() else []
     if js_files:
         response = client.get("/assets/" + js_files[0].name)
         check("静态 JS 资源可访问且 MIME 正确",
               response.status_code == 200 and "javascript" in (response.content_type or ""))
+    response = client.get("/video/")
+    check("视频子系统 /video/ 返回 200",
+          response.status_code == 200 and b'id="app"' in response.data)
     response = client.get("/api/auth/config")
     check("/api/auth/config 返回 code 0",
           response.status_code == 200 and response.get_json().get("code") == 0)
@@ -481,8 +486,11 @@ def verify(args, admin_password):
         if me.get("role") != "admin":
             # 已有库里账号角色可能由用户在「站点管理」调整过（例如另设超管），安装程序不擅自改回
             warn("账号 admin 当前角色为 %s（可能已人工调整），脚本不改动角色" % me.get("role"))
-        response = client.get("/api/videos")
-        check("业务接口 /api/videos 可查询",
+        response = client.get("/api/system/menus")
+        check("平台接口 /api/system/menus 返回 code 0",
+              response.status_code == 200 and response.get_json().get("code") == 0)
+        response = client.get("/video/api/videos")
+        check("视频子系统接口 /video/api/videos 可查询",
               response.status_code == 200 and response.get_json().get("code") == 0)
     else:
         warn("超管密码已不是本次设置的值（可能已改密），跳过登录态校验；账号存在性已在数据库确认")
@@ -500,17 +508,19 @@ def summary(args, tables, admin_password):
     print("=" * 62, flush=True)
     print("  数据库    : %s（%s 张表，幂等，未清空任何已有数据）" % (DB_NAME, tables), flush=True)
     print("  超管账号  : admin / %s" % ("你设置的密码" if args.admin_password != "admin123" else "admin123"), flush=True)
-    print("  配置文件  : backend\\config.py（随机 SECRET_KEY，DEBUG=False）", flush=True)
-    print("  前端产物  : frontend\\dist（Flask 直接托管）", flush=True)
+    print("  配置文件  : backend\\config.py（全系统共用，随机 SECRET_KEY，DEBUG=False）", flush=True)
+    print("  前端产物  : frontend\\dist（平台） + frontend\\video\\dist（子系统），共用一套配置", flush=True)
     print("", flush=True)
-    print("  启动后端  : cd backend && venv\\Scripts\\python app.py", flush=True)
-    print("  生产访问  : http://127.0.0.1:5000", flush=True)
-    print("  开发前端  : cd frontend && npm run dev  ->  http://localhost:9000", flush=True)
-    print("              （Vite 只监听 IPv6 localhost，写 127.0.0.1:9000 连不上）", flush=True)
+    print("  启动入口  : backend\\video\\venv\\Scripts\\python.exe backend\\app.py（唯一外层入口）", flush=True)
+    print("  平台入口  : http://127.0.0.1:5000/（登录 / 控制台）", flush=True)
+    print("  视频子系统: http://127.0.0.1:5000/video/", flush=True)
+    print("  开发前端  : cd frontend && npm run dev       ->  http://localhost:9000（平台）", flush=True)
+    print("              cd frontend && npm run dev:video  ->  http://localhost:9001（视频）", flush=True)
+    print("              （Vite 只监听 IPv6 localhost，写 127.0.0.1 连不上）", flush=True)
     print("", flush=True)
     print("  待办      : 1) 立即修改 admin 默认密码；2) 按需要设置", flush=True)
     print("              REGISTRATION_ENABLED / MEDIA_ROOTS；3) 局域网访问用", flush=True)
-    print("              venv\\Scripts\\python -m waitress --host=0.0.0.0 --port=5000 app:app", flush=True)
+    print("              cd backend && video\\venv\\Scripts\\python.exe -m waitress --host=0.0.0.0 --port=5000 app:application", flush=True)
     print("=" * 62, flush=True)
     if admin_password == "admin123":
         warn("当前仍是默认超管密码 admin123，请登录后在「站点管理」尽快改密")
@@ -541,7 +551,7 @@ def main():
     step(4, "确保超管账号存在")
     tables = ensure_admin(args, password)
 
-    step(5, "安装前端依赖并构建 frontend/dist")
+    step(5, "安装 pnpm workspace 依赖并构建 apps/*/dist")
     ensure_frontend(args)
 
     step(6, "检查 ffmpeg / ffprobe（可选）")

@@ -1,0 +1,32 @@
+{
+  "name": "@video-manager/video",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.3.1",
+    "@pinia/colada": "^1.4.9",
+    "@video-manager/shared": "workspace:*",
+    "@vue/compiler-sfc": "^3.5.46",
+    "@vue/devtools-api": "^8.2.1",
+    "axios": "^1.21.1",
+    "pinia": "^4.1.0",
+    "vue": "^3.5.46",
+    "vue-router": "^5.5.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^22.15.0",
+    "@vitejs/plugin-vue": "^6.0.11",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.4.0",
+    "vue-tsc": "^3.3.14"
+  }
+}

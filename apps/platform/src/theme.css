@@ -1,0 +1,796 @@
+/* ===== NetflixGC 风格全局主题 =====
+   Tailwind v4：仅引入 theme（设计 token）与 utilities（工具类），
+   不引入 preflight 基础重置，避免破坏既有手写组件样式。
+   @theme 中的 token 会自动生成 bg-nf-* / text-nf-* 等工具类。 */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme {
+  /* Netflix 暗红主题色板（与 :root 变量保持同值） */
+  --color-nf-red: #e50914;
+  --color-nf-red-hover: #f6121d;
+  --color-nf-page: #0b0b0d;
+  --color-nf-card: #181818;
+  --color-nf-elevated: #1f1f23;
+  --color-nf-border: #26262b;
+  --color-nf-line: #333338;
+  --color-nf-line-hover: #5c5c63;
+  --color-nf-text: #f5f5f5;
+  --color-nf-sub: #b3b3b3;
+  --color-nf-muted: #757575;
+  --color-nf-green: #46d369;
+  --color-nf-amber: #e6a01e;
+
+  /* 页面字号统一：业务页文本与 tvue / Element Plus 的 13px 基准对齐 */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 13px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+}
+
+:root {
+  --nf-red: #e50914;
+  --nf-red-hover: #f6121d;
+  --nf-bg-page: #0b0b0d;
+  --nf-bg-card: #181818;
+  --nf-bg-elevated: #1f1f23;
+  --nf-border: #26262b;
+  --nf-text-primary: #f5f5f5;
+  --nf-text-secondary: #b3b3b3;
+  --nf-text-muted: #757575;
+  --nf-font-xs: 12px;
+  --nf-font-sm: 13px;
+  --nf-font-base: 13px;
+  --nf-font-md: 14px;
+  --nf-font-lg: 16px;
+  --nf-font-xl: 18px;
+  --nf-font-2xl: 22px;
+  --nf-header-height: 48px;
+  --nf-subheader-height: 34px;
+  /* 半透明叠层 / 输入控件 / 滚动条：手写组件样式统一走变量，主题切换时一起换色。
+     注意：这里必须是实值，不能写成 var(--nf-overlay) 自引用——自定义属性自引用会
+     被判定为 guaranteed-invalid，导致 ghost 按钮、骨架流光等叠层在深色下直接消失。 */
+  --nf-overlay: rgba(255, 255, 255, 0.08);
+  --nf-overlay-strong: rgba(255, 255, 255, 0.16);
+  --nf-overlay-soft: rgba(255, 255, 255, 0.05);
+  --nf-bg-input: #1f1f23;
+  --nf-bg-input-focus: #232328;
+  --nf-border-input: #333338;
+  --nf-line-hover: #4d4d55;
+  --nf-skeleton-base: #17171b;
+  --nf-skeleton-bar: #2a2a31;
+  --nf-scroll-thumb: #333;
+
+  /* ===== 语义扩展 token（浅色适配用） =====
+     组件里历史遗留的 #161619 / #333338 / #fff 等硬编码由文件末尾的浅色补丁层
+     统一改指这些变量；深色主题给深色值，浅色主题在下方覆盖成浅色值。 */
+  --nf-bg-subtle: #1b1b1f;      /* 次级面板：表头、代码块、Tab、日志底 */
+  --nf-bg-sunken: #141418;      /* 再深一层：排序条、进度槽、计数胶囊 */
+  --nf-bg-hover: #232328;       /* hover 底色 */
+  --nf-divider: #24242a;        /* 表格行 / 列表分隔线 */
+  --nf-border-strong: #5c5c63;  /* hover 描边 */
+  --nf-shadow: rgba(0, 0, 0, 0.55);
+
+  /* 媒体区前景：Hero、封面叠层、播放器、频道头图刻意保持深色，
+     这些区域的文字不能跟随主题变深，故单独定义、两套主题同值。 */
+  --nf-on-media-text: #f5f5f5;
+  --nf-on-media-sub: rgba(255, 255, 255, 0.72);
+  --nf-on-media-amber: #e6a01e;
+
+  /* 状态色：深色用亮色，浅色用高对比深色，避免白底上的浅色字看不清 */
+  --nf-danger-text: #ff6b72;
+  --nf-danger-strong: #ff9ba1;
+  --nf-danger-soft: #ffb3b8;
+  --nf-danger-bg: rgba(112, 14, 20, 0.28);
+  --nf-success-text: #6fd8ab;
+  --nf-warn-text: #e6a01e;
+  --nf-warn-bg: rgba(120, 80, 10, 0.25);
+  --nf-info-text: #9fd0ff;
+  --nf-accent-soft: #f0c2c5;
+  --nf-owner-text: #e08a90;
+}
+
+/* ===== 浅色主题 =====
+   直接覆盖 Tailwind v4 的 --color-nf-* token：所有 bg-nf-* / text-nf-* 工具类
+   引用的都是变量，因此无需改任何组件类名即可整体换色。品牌红保持不变。
+   媒体区（海报 / Hero / 频道头图）刻意保留深色，作为浅色页面里的影院强调区。 */
+html[data-theme='light'] {
+  --color-nf-page: #f4f4f6;
+  --color-nf-card: #ffffff;
+  --color-nf-elevated: #ffffff;
+  --color-nf-border: #d9d9e0;
+  --color-nf-line: #ccd0da;
+  --color-nf-line-hover: #8a8a95;
+  --color-nf-text: #17171c;
+  --color-nf-sub: #4f4f5a;
+  --color-nf-muted: #767682;
+  --color-nf-amber: #a86a00;
+  --color-nf-green: #1f8a45;
+  --nf-bg-page: #f4f4f6;
+  --nf-bg-card: #ffffff;
+  --nf-bg-elevated: #ffffff;
+  --nf-border: #d9d9e0;
+  --nf-text-primary: #17171c;
+  --nf-text-secondary: #4f4f5a;
+  --nf-text-muted: #767682;
+  --nf-overlay: rgba(20, 20, 30, 0.08);
+  --nf-overlay-strong: rgba(20, 20, 30, 0.16);
+  --nf-overlay-soft: rgba(20, 20, 30, 0.05);
+  --nf-bg-input: #ffffff;
+  --nf-bg-input-focus: #ffffff;
+  --nf-border-input: #c8c8d0;
+  --nf-line-hover: #8a8a95;
+  --nf-skeleton-base: #e8e8ee;
+  --nf-skeleton-bar: #d4d4de;
+  --nf-scroll-thumb: #c2c2cc;
+
+  /* 语义扩展 token 的浅色 counterparts */
+  --nf-bg-subtle: #f2f2f6;
+  --nf-bg-sunken: #eaeaf0;
+  --nf-bg-hover: #e8e8ef;
+  --nf-divider: #e6e6ed;
+  --nf-border-strong: #a5a5b2;
+  --nf-shadow: rgba(24, 24, 45, 0.16);
+  --nf-danger-text: #c0262d;
+  --nf-danger-strong: #a81f26;
+  --nf-danger-soft: #8f1d23;
+  --nf-danger-bg: rgba(229, 9, 20, 0.08);
+  --nf-success-text: #0f7a45;
+  --nf-warn-text: #8a5a00;
+  --nf-warn-bg: rgba(230, 160, 30, 0.14);
+  --nf-info-text: #1d5fa8;
+  --nf-accent-soft: #a3242b;
+  --nf-owner-text: #a83a42;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--nf-bg-page);
+  color: var(--nf-text-primary);
+  font-family:
+    'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  font-size: var(--nf-font-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* 深色滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--nf-bg-page);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--nf-scroll-thumb);
+  border-radius: 5px;
+  border: 2px solid var(--nf-bg-page);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--nf-line-hover);
+}
+
+/* ===== 手写组件类（components 层：可被 utilities 工具类覆盖微调） ===== */
+@layer components {
+.nf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: var(--nf-font-base);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease, opacity 0.18s ease;
+}
+
+.nf-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 主按钮：Netflix 红 */
+.nf-btn.red {
+  background: var(--nf-red);
+  color: #fff;
+}
+
+.nf-btn.red:hover {
+  background: var(--nf-red-hover);
+}
+
+/* 次按钮：半透明灰（Netflix 「详情」按钮语言） */
+.nf-btn.ghost {
+  background: var(--nf-overlay);
+  color: var(--nf-text-primary);
+}
+
+.nf-btn.ghost:hover {
+  background: var(--nf-overlay-strong);
+}
+
+.nf-btn.lg {
+  height: 44px;
+  padding: 0 26px;
+  font-size: var(--nf-font-md);
+  border-radius: 6px;
+}
+
+.nf-btn.sm {
+  height: 28px;
+  padding: 0 12px;
+  font-size: var(--nf-font-xs);
+}
+
+/* 文字型按钮 */
+.nf-btn.text {
+  background: transparent;
+  color: var(--nf-text-secondary);
+}
+
+.nf-btn.text:hover {
+  background: var(--nf-overlay-soft);
+  color: var(--nf-text-primary);
+}
+
+/* 下拉菜单项（导航「更多」收起低频操作） */
+.nf-btn-menu {
+  display: flex;
+  align-items: center;
+  gap: 9px; /* Font Awesome 图标与菜单文字的间距 */
+  width: 100%;
+  padding: 9px 16px;
+  border: none;
+  background: transparent;
+  color: var(--nf-text-secondary);
+  font-size: var(--nf-font-base);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nf-btn-menu:hover {
+  background: var(--nf-overlay-soft);
+  color: var(--nf-text-primary);
+}
+
+/* ===== 手写输入体系 ===== */
+.nf-input,
+.nf-textarea,
+.nf-select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--nf-bg-input);
+  border: 1px solid var(--nf-border-input);
+  border-radius: 5px;
+  color: var(--nf-text-primary);
+  font-size: var(--nf-font-base);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.nf-input::placeholder,
+.nf-textarea::placeholder {
+  color: var(--nf-text-muted);
+}
+
+.nf-input:hover,
+.nf-textarea:hover,
+.nf-select:hover {
+  border-color: var(--nf-line-hover);
+}
+
+.nf-input:focus,
+.nf-textarea:focus,
+.nf-select:focus {
+  border-color: rgba(229, 9, 20, 0.75);
+  background: var(--nf-bg-input-focus);
+}
+
+.nf-textarea {
+  resize: vertical;
+  line-height: 1.7;
+  min-height: 76px;
+}
+
+.nf-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23b3b3b3' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  cursor: pointer;
+}
+
+.nf-select option {
+  background: var(--nf-bg-input);
+  color: var(--nf-text-primary);
+}
+
+/* ===== 表单项布局 ===== */
+.nf-field {
+  margin-bottom: 16px;
+}
+
+.nf-label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: var(--nf-font-base);
+  font-weight: 600;
+  color: var(--nf-text-secondary);
+}
+
+/* ===== 胶囊选项（类型 / 标签选择器） ===== */
+.chip-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-opt {
+  padding: 4px 13px;
+  border: 1px solid var(--nf-border-input);
+  border-radius: 16px;
+  background: var(--nf-bg-input);
+  color: var(--nf-text-secondary);
+  font-size: var(--nf-font-base);
+  line-height: 18px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.chip-opt:hover {
+  border-color: var(--nf-border-strong);
+  color: var(--nf-text-primary);
+}
+
+.chip-opt.on {
+  background: var(--nf-red);
+  border-color: var(--nf-red);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ===== 占位底色：深色电影感渐变（按 id 轮换 6 色，Hero / 卡片共用） ===== */
+.cover-tone-0 { background: linear-gradient(150deg, #1d2a44, #101826); }
+.cover-tone-1 { background: linear-gradient(150deg, #17301f, #0f2015); }
+.cover-tone-2 { background: linear-gradient(150deg, #33210f, #1f1409); }
+.cover-tone-3 { background: linear-gradient(150deg, #2a1f3d, #181126); }
+.cover-tone-4 { background: linear-gradient(150deg, #33141d, #1f0c11); }
+.cover-tone-5 { background: linear-gradient(150deg, #123333, #0c1f20); }
+
+/* ===== 加载动画 ===== */
+.nf-loading {
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--nf-overlay);
+  border-top-color: var(--nf-red);
+  border-radius: 50%;
+  animation: nf-spin 0.8s linear infinite;
+}
+
+@keyframes nf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== 感知体验升级：骨架屏 / 错峰入场 / 回顶 ===== */
+@keyframes nf-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes nf-shimmer {
+  from { background-position: -180% 0; }
+  to   { background-position: 180% 0; }
+}
+@keyframes nf-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* 列表卡片依次淡入上移，--nf-delay 由模板按序号注入（有上限，避免长列表拖尾）。
+   用 backwards 而非 both：动画结束后不保留 transform，避免压住卡片自身的 hover 缩放。 */
+.nf-enter {
+  animation: nf-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: var(--nf-delay, 0ms);
+}
+
+/* 封面截帧 / 海报加载完成后渐显，避免闪烁 */
+.nf-media-ready {
+  animation: nf-fade 0.35s ease backwards;
+}
+
+/* 骨架屏：与真实卡片同形状，流光扫过代替单调转圈 */
+.nf-skeleton {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--nf-border);
+  border-radius: 8px;
+  background: var(--nf-skeleton-base);
+}
+.nf-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 35%, var(--nf-overlay-soft) 50%, transparent 65%);
+  background-size: 220% 100%;
+  animation: nf-shimmer 1.35s ease-in-out infinite;
+}
+.nf-skeleton-bar {
+  border-radius: 4px;
+  background: var(--nf-skeleton-bar);
+}
+
+/* 横向滑动行（继续观看 / 窄屏筛选）：隐藏滚动条 + 轻吸附 */
+.nf-scroll-x {
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.nf-scroll-x::-webkit-scrollbar { display: none; }
+.nf-scroll-x > * { scroll-snap-align: start; }
+
+/* 回到顶部：滚动超过一屏后出现 */
+.nf-to-top {
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  z-index: 90;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nf-overlay);
+  border-radius: 50%;
+  background: var(--nf-bg-card);
+  color: var(--nf-text-primary);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px var(--nf-shadow);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+.nf-to-top:hover {
+  transform: translateY(-3px);
+  background: var(--nf-red);
+}
+@media (max-width: 900px) {
+  .nf-to-top { right: 16px; bottom: 16px; width: 40px; height: 40px; }
+}
+.nf-pop-enter-active, .nf-pop-leave-active { transition: opacity 0.22s ease; }
+.nf-pop-enter-from, .nf-pop-leave-to { opacity: 0; }
+} /* end @layer components */
+
+/* 全局平滑滚动（放在 layer 外，确保覆盖默认行为） */
+html { scroll-behavior: smooth; }
+
+/* 尊重系统「减少动效」：关闭全部非必要动画 */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .nf-enter, .nf-media-ready { animation: none; }
+  .nf-skeleton::after { animation: none; }
+  .nf-to-top { transition: none; }
+}
+
+/* ===== 浅色主题的导航修正 =====
+   频道头图的渐变终点已在 channelPresets.js 里固定为深色，各频道配色不会丢失；
+   只有导航条的 to-nf-page 会随主题变浅，这里把它换成实色浅底，保证深色导航文字可读。
+   规则放在所有 @layer 之外，因此优先级高于 Tailwind utilities。 */
+html[data-theme='light'] .nf-site-header {
+  background-image: none;
+  background-color: rgba(255, 255, 255, 0.94);
+  border-bottom-color: var(--color-nf-border);
+}
+/* 深色媒体区（Hero / 详情大图）上的次按钮：浅色主题下仍用浅字 + 浅色半透明底，
+   否则 --nf-text-primary 变深后会与深色海报糊在一起。 */
+html[data-theme='light'] .nf-on-media.nf-btn.ghost {
+  background: rgba(255, 255, 255, 0.16);
+  color: #f5f5f5;
+}
+html[data-theme='light'] .nf-on-media.nf-btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* ==========================================================================
+   浅色主题适配补丁层
+   --------------------------------------------------------------------------
+   背景：早期组件里散落了大量写死的深色底 / 浅色字 / 白色半透明叠层，
+   只用 --nf-* 变量换色时这些规则不会跟着变，浅色模式下出现「白底白字」
+   「白底白边框」「局部仍是黑块」。这里统一按语义改指主题变量。
+
+   为什么集中在这一层：
+     1. 不改动 20+ 个组件源码，浅色规则的取舍可在一处审计；
+     2. 全部规则位于 @layer 之外，优先级高于 Tailwind utilities 层；
+     3. 统一带 `html[data-theme='light'] body` 前缀，特异性高于 Vue 的
+        `.xxx[data-v-abc]` scoped 规则（组件 CSS 在构建产物中排在 theme.css 之后）。
+
+   刻意保留深色的媒体区（不改）：HeroCarousel、DetailPage 大图、频道头图渐变、
+   VideoCard 封面叠层 / 卡片底部信息条 / 详情浮层、PlayerPage 播放器、封面占位
+   渐变、模态遮罩、移动端抽屉遮罩、实心红/绿/琥珀状态徽章。这些区域文字用
+   --nf-on-media-text 或写死 #fff，与浅色页面形成影院式强调。
+   ========================================================================== */
+
+/* ---------- 1. 写死的白色文字 → 主题主文字（普通 UI 区） ---------- */
+html[data-theme='light'] body :is(
+  .admin-title, .stat-card b, .integrity-summary b,
+  .audit-title, .sub-title, .log-panel-title,
+  .pc-name, .pc-section-title, .pc-playlist-name
+) {
+  color: var(--nf-text-primary);
+}
+
+/* 表格正文 / 徽章基础态：写死的浅灰字 → 主题次文字 */
+html[data-theme='light'] body :is(.audit-table td, .log-badge, .action-badge) {
+  color: var(--nf-text-secondary);
+}
+
+/* 状态徽章有实色深底，仍需白字（特异性高于上一条） */
+html[data-theme='light'] body :is(
+  .log-badge.a-approve, .log-badge.a-reject, .log-badge.a-submit, .log-badge.a-resubmit,
+  .action-badge.a-approve, .action-badge.a-reject, .action-badge.a-submit,
+  .action-badge.a-resubmit, .action-badge.a-auto_approve
+) {
+  color: #fff;
+}
+
+/* hover 时写死 #fff：浅色底上会消失 */
+html[data-theme='light'] body :is(
+  .back-btn:hover, .audit-tab:hover, .sub-tab:hover,
+  .quick-reason:hover, .log-panel-close:hover,
+  .crumb-up:hover, .save-dir-clear:hover,
+  .nav-links a:hover, .nf-btn.text:hover, .nf-btn-menu:hover
+) {
+  color: var(--nf-text-primary);
+}
+
+/* ---------- 2. 语义色：深色亮色字 → 浅色高对比字 ---------- */
+html[data-theme='light'] body :is(
+  .stat-card b.warn, .warn-dim, .block-hint code, .chip-unpub,
+  .form-resubmit-note b
+) {
+  color: var(--nf-warn-text);
+}
+html[data-theme='light'] body :is(
+  .stat-card b.good, .good, .pub-flag.on, .col-ops .ghost.pass
+) {
+  color: var(--nf-success-text);
+}
+html[data-theme='light'] body :is(
+  .root-list code, .exempt-tip
+) {
+  color: var(--nf-info-text);
+}
+html[data-theme='light'] body :is(
+  .audit-action, .reject-title, .form-reject-tip,
+  .reject-error, .name-hint.taken, .name-hint.invalid,
+  .pc-role-tag
+) {
+  color: var(--nf-danger-text);
+}
+html[data-theme='light'] body :is(
+  .log-table .reason-text.reject, .reason-text, .form-reject-note
+) {
+  color: var(--nf-danger-strong);
+}
+html[data-theme='light'] body :is(
+  .col-owner, .log-table .film-path, .operator
+) {
+  color: var(--nf-owner-text);
+}
+html[data-theme='light'] body :is(
+  .switch-closed, .picked-x, .nav-group-label, .audit-search
+) {
+  color: var(--nf-text-muted);
+}
+html[data-theme='light'] body .admin-table th { color: var(--nf-text-secondary); }
+html[data-theme='light'] body .name-hint.ok { color: var(--nf-success-text); }
+/* 伪元素不能放进 :is()，单独写 */
+html[data-theme='light'] body .search-input::placeholder { color: var(--nf-text-muted); }
+html[data-theme='light'] body :is(.save-dir-path, .switch-link) {
+  color: var(--nf-accent-soft);
+}
+html[data-theme='light'] body .switch-link:hover { color: var(--nf-red-hover); }
+html[data-theme='light'] body .timeline-reason.reject { color: var(--nf-danger-soft); }
+
+/* ---------- 3. 写死的深色底 → 主题面板底 ---------- */
+html[data-theme='light'] body :is(.stat-card, .chart-card, .audit-table) {
+  background: var(--nf-bg-card);
+}
+html[data-theme='light'] body :is(
+  .tab-btn, .admin-table th, .flow-note, .log-panel,
+  .pc-avatar-edit, .batch-hint code, .picked-x,
+  .chart-card .nf-skeleton-bar
+) {
+  background: var(--nf-bg-subtle);
+}
+html[data-theme='light'] body :is(.folder-item:hover) { background: var(--nf-bg-hover); }
+html[data-theme='light'] body .admin-select {
+  background: var(--nf-bg-input);
+  color: var(--nf-text-primary);
+}
+html[data-theme='light'] body :is(.form-reject-note) { background: var(--nf-danger-bg); }
+html[data-theme='light'] body :is(.form-resubmit-note) { background: var(--nf-warn-bg); color: var(--nf-text-secondary); }
+html[data-theme='light'] body :is(.timeline-dot) { border-color: var(--nf-bg-card); }
+
+/* ---------- 4. 写死的深色边框 / 分隔线 → 主题描边 ---------- */
+html[data-theme='light'] body :is(
+  .admin-tabs, .tab-btn, .stat-card, .table-scroll, .chart-card,
+  .admin-table th, .admin-select, .audit-table, .audit-empty,
+  .back-btn, .audit-tab, .audit-search, .log-select, .quick-reason,
+  .sub-tab, .log-panel-close, .sub-empty,
+  .crumb-up, .folder-item, .picked-file, .timeline-list, .exempt-tip
+) {
+  border-color: var(--nf-border);
+}
+/* 日志面板左边是品牌红竖条，只换另外三边，不能整条覆盖 */
+html[data-theme='light'] body .log-panel {
+  border-top-color: var(--nf-border);
+  border-right-color: var(--nf-border);
+  border-bottom-color: var(--nf-border);
+}
+html[data-theme='light'] body :is(.admin-table td) { border-bottom-color: var(--nf-divider); }
+html[data-theme='light'] body :is(
+  .back-btn:hover, .audit-tab:hover, .sub-tab:hover,
+  .quick-reason:hover, .log-panel-close:hover, .crumb-up:hover
+) {
+  border-color: var(--nf-border-strong);
+}
+
+/* ---------- 5. 登录页：整块卡片随主题变浅（表单区，不是媒体区） ---------- */
+html[data-theme='light'] body .login-card {
+  background: var(--nf-bg-card);
+  border-color: var(--nf-border);
+  box-shadow: 0 24px 80px var(--nf-shadow);
+}
+html[data-theme='light'] body .brand-name { text-shadow: none; }
+
+/* ---------- 6. 媒体区：误用「跟随主题」的文字变量，锁回浅色 ----------
+   这些节点压在 Hero 海报、封面信息条、详情浮层或播放器纯黑底上，
+   浅色主题下 --nf-text-primary 会变深色，导致深字压深底完全看不见。 */
+html[data-theme='light'] body :is(
+  .hero-desc, .hero-stats, .hero-chip, .hero-arrow,
+  .backdrop-desc, .bar-duration, .bar-muted,
+  .bar-tags .chip, .detail-value .chip,
+  .detail-label, .detail-value, .cover-fav,
+  .empty-player, .compat-title, .compat-detail, .compat-detail b
+) {
+  color: var(--nf-on-media-text);
+}
+/* 深色信息条上的胶囊：叠层也要换回白色半透明，否则浅色下是深灰叠深灰 */
+html[data-theme='light'] body :is(.bar-tags .chip, .detail-value .chip) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+html[data-theme='light'] body .hero-chip {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+/* 封面角标里的琥珀字压在 bg-black/60|65 上，不能跟着主题变深棕 */
+html[data-theme='light'] body :is(
+  [class~='bg-black/60'][class~='text-nf-amber'],
+  [class~='bg-black/65'][class~='text-nf-amber']
+) {
+  color: var(--nf-on-media-amber);
+}
+
+/* ---------- 7. 原生表单控件与阴影 ---------- */
+html[data-theme='light'] .nf-select {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%234f4f5a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+html[data-theme='light'] body :is(
+  [class~='shadow-[0_12px_32px_rgba(0,0,0,0.55)]'],
+  [class~='shadow-[0_8px_28px_rgba(0,0,0,0.55)]'],
+  [class~='shadow-[0_24px_72px_rgba(0,0,0,0.8)]']
+) {
+  box-shadow: 0 12px 32px var(--nf-shadow);
+}
+html[data-theme='light'] body .nav-drawer { box-shadow: 12px 0 40px var(--nf-shadow); }
+
+/* ---------- 8. Tailwind 白/黑半透明叠层（UI 区） ----------
+   用 [class~=] 按完整 class token 精确匹配，避免误伤 hover: 变体和
+   封面上的 bg-black/60、bg-black/65、bg-black/75 等媒体叠层。 */
+html[data-theme='light'] body :is(
+  [class~='border-white/10'], [class~='border-white/15'],
+  [class~='border-white/[0.07]'], [class~='border-white/[0.08]']
+) {
+  border-color: var(--nf-border);
+}
+html[data-theme='light'] body :is(
+  [class~='border-white/[0.04]'], [class~='border-white/[0.06]']
+) {
+  border-color: var(--nf-divider);
+}
+html[data-theme='light'] body [class~='border-white/25'] {
+  border-color: var(--nf-border-strong);
+}
+html[data-theme='light'] body :is(
+  [class~='hover:border-white/20']:hover,
+  [class~='hover:border-white/25']:hover,
+  [class~='hover:border-white/35']:hover
+) {
+  border-color: var(--nf-border-strong);
+}
+html[data-theme='light'] body :is(
+  [class~='bg-white/[0.02]'], [class~='bg-white/[0.07]'],
+  [class~='bg-white/5'], [class~='bg-white/10']
+) {
+  background-color: var(--nf-bg-subtle);
+}
+html[data-theme='light'] body [class~='bg-white/[0.03]'] {
+  background-color: var(--nf-bg-card);
+}
+html[data-theme='light'] body :is(
+  [class~='bg-white/25'], [class~='bg-black/20'], [class~='bg-black/25']
+) {
+  background-color: var(--nf-bg-sunken);
+}
+html[data-theme='light'] body .chart-card [class~='bg-white/[0.06]'] {
+  background-color: var(--nf-bg-sunken);
+}
+html[data-theme='light'] body :is(
+  [class~='hover:bg-white/5']:hover,
+  [class~='hover:bg-white/[0.05]']:hover,
+  [class~='hover:bg-white/[0.06]']:hover,
+  [class~='hover:bg-white/15']:hover
+) {
+  background-color: var(--nf-bg-hover);
+}
+
+/* 任意值类：硬编码的深色底 / 深色描边 / 深色页脚字 */
+html[data-theme='light'] body :is([class~='bg-[#202025]']) {
+  background-color: var(--nf-bg-subtle);
+}
+html[data-theme='light'] body :is([class~='border-[#2a2a30]'], [class~='border-[#2e2e34]']) {
+  border-color: var(--nf-border);
+}
+html[data-theme='light'] body [class~='text-[#4d4d55]'],
+html[data-theme='light'] body [class~='text-[#8a8a92]'] {
+  color: var(--nf-text-muted);
+}
+html[data-theme='light'] body :is(
+  [class~='text-amber-200'], [class~='text-amber-300']
+) {
+  color: var(--nf-warn-text);
+}
+html[data-theme='light'] body [class~='bg-amber-500/20'] {
+  background-color: var(--nf-warn-bg);
+}
+html[data-theme='light'] body :is(
+  [class~='text-[#ff9ba0]'], [class~='text-[#ff8a90]']
+) {
+  color: var(--nf-danger-text);
+}
+html[data-theme='light'] body [class~='text-[#ffb3b8]'] {
+  color: var(--nf-danger-soft);
+}
+html[data-theme='light'] body [class~='text-[#e08a90]'] {
+  color: var(--nf-owner-text);
+}

@@ -1,0 +1,26 @@
+{
+  "name": "video-manager-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "dev:platform": "turbo run dev --filter=@video-manager/platform",
+    "dev:video": "turbo run dev --filter=@video-manager/video",
+    "build": "turbo run build",
+    "build:platform": "turbo run build --filter=@video-manager/platform",
+    "build:video": "turbo run build --filter=@video-manager/video",
+    "typecheck": "turbo run typecheck",
+    "preview": "turbo run preview --parallel"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "turbo": "^2.11.13",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.14"
+  }
+}

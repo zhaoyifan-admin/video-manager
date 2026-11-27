@@ -35,12 +35,17 @@ DEBUG = False                # 开发调试模式；局域网/公网部署务必
 CORS_ORIGINS = []            # 允许跨域的前端来源；同源部署留空即不启用 CORS
 
 # ---------- 路径与外部工具 ----------
+# 全系统共用此配置；各子系统业务代码按 backend/<name>/ 划分。
 import os
 import shutil
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-THUMB_DIR = os.path.join(BASE_DIR, "thumbs")
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
+VIDEO_DIR = os.path.join(BACKEND_DIR, "video")
+# BASE_DIR 是视频子系统内相对路径（上传/封面/路径白名单）的基准，保持既有引用不变。
+BASE_DIR = VIDEO_DIR
+UPLOAD_DIR = os.path.join(VIDEO_DIR, "uploads")
+THUMB_DIR = os.path.join(VIDEO_DIR, "thumbs")
 
 FFMPEG_BIN = shutil.which("ffmpeg")
 FFPROBE_BIN = shutil.which("ffprobe")

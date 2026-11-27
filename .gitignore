@@ -11,10 +11,14 @@ backend/config.py
 # ---------- 用户数据（视频 / 缩略图缓存） ----------
 backend/uploads/
 backend/thumbs/
+backend/video/uploads/
+backend/video/thumbs/
+backend/video/bin/
 
 # ---------- Node / 前端 ----------
 node_modules/
-frontend/dist/
+dist/
+.turbo/
 *.timestamp-*.mjs
 
 # ---------- IDE / 系统 ----------
